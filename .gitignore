@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.medusa/
+.env
+.env.*
+!.env.example
+.local/
+research/
+coverage/
+*.log
+.DS_Store

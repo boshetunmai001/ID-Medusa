@@ -1,0 +1,136 @@
+name: medusa-encvoy-image
+
+services:
+  id-db:
+    image: postgres:14.4@sha256:9ceb24f8c5f15c053d973a3610866f473690875dc13eb3282b45302189321040
+    platform: linux/amd64
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Run scripts/encvoy-image-env.mjs first}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/encvoy-image-env.mjs first}
+      POSTGRES_DB: ${POSTGRES_DB:?Run scripts/encvoy-image-env.mjs first}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\" >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    logging:
+      driver: none
+
+  id-redis:
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    platform: linux/amd64
+    volumes:
+      - ${ENCVOY_REDIS_VOLUME:-redis-data}:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    logging:
+      driver: none
+
+  id-back:
+    image: registry.digtlab.ru/trusted/id@sha256:ebb2bc0732550692f6126bf4a46871c2f054fe72d54a885d4f9e5eaa56b06069
+    platform: linux/amd64
+    env_file:
+      - ../.local/encvoy-image.env
+    command: ["sh", "-c", "npx prisma migrate deploy && npm run start:prod"]
+    depends_on:
+      id-front:
+        condition: service_started
+      id-db:
+        condition: service_healthy
+      id-redis:
+        condition: service_healthy
+    network_mode: "service:id-front"
+    volumes:
+      - images:/app/public/images
+    healthcheck:
+      test: ["CMD", "node", "-e", "const net=require('net');const s=net.connect(3005,'127.0.0.1',()=>{s.destroy();process.exit(0)});s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),1500)"]
+      interval: 5s
+      timeout: 3s
+      retries: 36
+      start_period: 20s
+    logging:
+      driver: none
+
+  id-oidc:
+    image: registry.digtlab.ru/trusted/id@sha256:ce8fcf7751ac5d4f6fca780921454062b9b13ca3ecdb91134183eb0fecdf9138
+    platform: linux/amd64
+    env_file:
+      - ../.local/encvoy-image.env
+    depends_on:
+      id-front:
+        condition: service_started
+      id-db:
+        condition: service_healthy
+      id-redis:
+        condition: service_healthy
+    network_mode: "service:id-front"
+    volumes:
+      - jwks:/app/jwks
+    healthcheck:
+      test: ["CMD", "node", "-e", "const net=require('net');const s=net.connect(3003,'127.0.0.1',()=>{s.destroy();process.exit(0)});s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),1500)"]
+      interval: 5s
+      timeout: 3s
+      retries: 36
+      start_period: 20s
+    logging:
+      driver: none
+
+  id-auth:
+    image: registry.digtlab.ru/trusted/id@sha256:11b365e5235b5feb6f5167eb7872283d6e4a4fb660294bd9ea3add84ba2e47a9
+    platform: linux/amd64
+    env_file:
+      - ../.local/encvoy-image.env
+    depends_on:
+      id-front:
+        condition: service_started
+      id-db:
+        condition: service_healthy
+      id-redis:
+        condition: service_healthy
+    network_mode: "service:id-front"
+    healthcheck:
+      test: ["CMD", "node", "-e", "const net=require('net');const s=net.connect(3007,'127.0.0.1',()=>{s.destroy();process.exit(0)});s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),1500)"]
+      interval: 5s
+      timeout: 3s
+      retries: 36
+      start_period: 20s
+    logging:
+      driver: none
+
+  id-front:
+    image: registry.digtlab.ru/trusted/id@sha256:0a7561599cca99402f4291844a14a3ab79201677c734f142cd04b2fef55d0120
+    platform: linux/amd64
+    env_file:
+      - ../.local/encvoy-image-front.env
+    networks:
+      default:
+        aliases:
+          - id-back
+          - id-oidc
+          - id-auth
+    volumes:
+      - ./encvoy-image-logging.conf:/etc/nginx/conf.d/00-encvoy-image-logging.conf:ro
+      - ./encvoy-image-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../.local/encvoy-image-runtime-config.js:/tmp/encvoy-image-runtime-config.js:ro
+      - ./encvoy-image-front-config.sh:/docker-entrypoint.d/40-encvoy-image-config.sh:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9090/"]
+      interval: 5s
+      timeout: 3s
+      retries: 18
+    logging:
+      driver: none
+
+volumes:
+  postgres-data:
+  redis-data:
+  redis-secure-seed:
+  images:
+  jwks:
