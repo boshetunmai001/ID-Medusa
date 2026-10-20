@@ -1,3 +1,5 @@
+# ID-Medusa
+
 # Encvoy ID authentication for Medusa v2
 
 Local integration prototype using Medusa **2.21.2**, Node.js **22.23.3**, and the vendor-distributed Encvoy ID **3.6.19** images pinned by digest. Real Encvoy authentication has passed the local HTTP acceptance run. Safari customer login, profile, logout, SSO reuse, and pre-authorized employee Admin login have also passed. Nothing is published or deployed.
