@@ -1,4 +1,4 @@
-import { EncvoyStateStore } from "@local/medusa-auth-encvoy";
+import { EncvoyStateStore } from "medusa-plugin-encvoy-id";
 
 let store: EncvoyStateStore | undefined;
 export function stateStore(): EncvoyStateStore {

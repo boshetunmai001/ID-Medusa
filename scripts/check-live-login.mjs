@@ -113,13 +113,11 @@ async function main() {
     check(completions.every((response) => response.status === 200), "Concurrent native customer completion failed.");
     const ids = completions.map((response) => response.data?.customer?.id);
     check(typeof ids[0] === "string" && ids.every((id) => id === ids[0]), "Concurrent customer completion did not resolve one account.");
-    const refreshed = await api(browser, "/auth/token/refresh", "POST", token);
-    check(refreshed.status === 200 && typeof refreshed.data?.token === "string", "Medusa token refresh failed.");
-    const session = await api(browser, "/auth/session", "POST", refreshed.data.token);
-    check(session.status === 200, "Medusa session creation failed.");
+    const session = await api(browser, "/auth/session", "POST", token);
+    check(session.status === 200, `Medusa session creation failed (HTTP ${session.status}; ${session.data?.message ?? "no_message"}).`);
     const profile = await api(browser, "/encvoy/profile");
     check(profile.status === 200 && profile.data?.customer?.id === ids[0], "Protected customer profile does not match the completed account.");
-    return { id: ids[0], token: refreshed.data.token };
+    return { id: ids[0], token };
   }
 
   const customer = new LocalHttpBrowser();
@@ -191,8 +189,8 @@ async function main() {
   check((await api(customer, "/encvoy/profile")).status === 401, "Profile remained accessible after logout.");
   check((await api(oldSession, "/encvoy/profile")).status === 401, "The previous session cookie remained valid after logout.");
   const retainedToken = await api(new LocalHttpBrowser(), "/auth/token/refresh", "POST", account.token);
-  check(retainedToken.status === 200, "Unexpected change to documented native JWT refresh behavior.");
-  console.log("PASS local session logout invalidates the old cookie; retained Medusa JWT still refreshes (documented limit).");
+  check(retainedToken.status === 401 && retainedToken.data?.message === "reauthentication_required", "Customer JWT refresh was not refused after logout.");
+  console.log("PASS local session logout invalidates the old cookie; Encvoy customer JWT refresh is refused.");
 
   const repeat = await login(customer, "CUSTOMER");
   check(repeat.completed.status === 200 && typeof repeat.completed.data?.token === "string", "Repeat Encvoy login failed.");
@@ -206,6 +204,8 @@ async function main() {
   check(staff.completed.status === 200 && typeof staff.completed.data?.token === "string", `Pre-authorized employee authentication failed (HTTP ${staff.completed.status}).`);
   const staffProfile = await api(employee, "/admin/users/me", "GET", staff.completed.data.token);
   check(staffProfile.status === 200 && staffProfile.data?.user?.email === fixtures.ENCVOY_EMPLOYEE_EMAIL, "The authenticated Medusa employee does not match the pre-authorized fixture.");
+  const staffRefresh = await api(employee, "/auth/token/refresh", "POST", staff.completed.data.token);
+  check(staffRefresh.status === 401 && staffRefresh.data?.message === "reauthentication_required", "Envcoy employee JWT refresh was not refused.");
   console.log("PASS real pre-authorized employee OIDC login and native Admin API.");
   const customerRecords = await api(employee, `/admin/customers?email=${encodeURIComponent(fixtures.ENCVOY_CUSTOMER_EMAIL)}`, "GET", staff.completed.data.token);
   check(customerRecords.status === 200 && customerRecords.data?.count === 1 && customerRecords.data?.customers?.[0]?.id === account.id, "The native customer listing did not confirm exactly one fixture account.");

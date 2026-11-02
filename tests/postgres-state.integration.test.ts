@@ -17,6 +17,8 @@ test("PostgreSQL state is bound to browser, client context, expiry, and one-time
   const browser = `browser-${suffix}`
   const context = `customer:${suffix}`
   const stateHash = createHash("sha256").update(state, "utf8").digest("hex")
+  const jwt = `synthetic-jwt-${suffix}`
+  const jwtHash = createHash("sha256").update(jwt, "utf8").digest("hex")
 
   try {
     await store.initialize()
@@ -30,6 +32,16 @@ test("PostgreSQL state is bound to browser, client context, expiry, and one-time
     })
     assert.equal(await store.consumeState(state, browser, context), null)
 
+    const tokenUses = await Promise.all(
+      Array.from({ length: 12 }, () => store.consumeMedusaJwt(jwt, Math.floor(Date.now() / 1000) + 60)),
+    )
+    assert.equal(tokenUses.filter(Boolean).length, 1, "a JWT must have one atomic refresh/session use")
+    const storedToken = await sql.query(
+      "SELECT token_hash FROM encvoy_consumed_medusa_jwt WHERE token_hash = $1",
+      [jwtHash],
+    )
+    assert.deepEqual(storedToken.rows, [{ token_hash: jwtHash }], "only the JWT hash may be stored")
+
     const expiredState = `expired-${suffix}`
     const expiredHash = createHash("sha256").update(expiredState, "utf8").digest("hex")
     await store.saveState(expiredState, browser, "expired-verifier", "expired-nonce", context)
@@ -42,6 +54,7 @@ test("PostgreSQL state is bound to browser, client context, expiry, and one-time
     await sql.query("DELETE FROM encvoy_oidc_state WHERE state_hash = ANY($1::char(64)[])", [
       [stateHash, createHash("sha256").update(`expired-${suffix}`, "utf8").digest("hex")],
     ])
+    await sql.query("DELETE FROM encvoy_consumed_medusa_jwt WHERE token_hash = $1", [jwtHash])
     await sql.end()
     await store.close()
   }

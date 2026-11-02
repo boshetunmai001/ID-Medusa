@@ -16,6 +16,7 @@ type LockContext = {
 const activeLocks = new AsyncLocalStorage<LockContext>()
 const pools = new Map<string, Pool>()
 const poolEndPromises = new WeakMap<Pool, Promise<void>>()
+const initializationPromises = new WeakMap<Pool, Promise<void>>()
 
 export type EncvoyLoginState = {
   codeVerifier: string
@@ -47,8 +48,25 @@ export class EncvoyStateStore {
     this.pool = pool
   }
 
-  /** Create the state table when the application starts. Safe to call repeatedly. */
+  /** Create the state table at startup or before the first login. Safe to call repeatedly. */
   async initialize(): Promise<void> {
+    let initialization = initializationPromises.get(this.pool)
+    if (!initialization) {
+      initialization = this.initializeSchema()
+      initializationPromises.set(this.pool, initialization)
+    }
+
+    try {
+      await initialization
+    } catch (error) {
+      if (initializationPromises.get(this.pool) === initialization) {
+        initializationPromises.delete(this.pool)
+      }
+      throw error
+    }
+  }
+
+  private async initializeSchema(): Promise<void> {
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS encvoy_oidc_state (
         state_hash char(64) PRIMARY KEY,
@@ -75,6 +93,16 @@ export class EncvoyStateStore {
     await this.pool.query(`
       CREATE INDEX IF NOT EXISTS encvoy_oidc_state_expiry_idx
       ON encvoy_oidc_state (expires_at)
+    `)
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS encvoy_consumed_medusa_jwt (
+        token_hash char(64) PRIMARY KEY,
+        expires_at timestamptz NOT NULL
+      )
+    `)
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS encvoy_consumed_medusa_jwt_expiry_idx
+      ON encvoy_consumed_medusa_jwt (expires_at)
     `)
   }
 
@@ -119,6 +147,24 @@ export class EncvoyStateStore {
     )
 
     return result.rows[0] ?? null
+  }
+
+  /** Atomically mark one verified Medusa JWT as consumed, storing only its hash. */
+  async consumeMedusaJwt(token: string, expiresAt: number): Promise<boolean> {
+    if (!token || !Number.isFinite(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) {
+      return false
+    }
+    await this.pool.query(
+      `DELETE FROM encvoy_consumed_medusa_jwt WHERE expires_at <= now()`,
+    )
+    const result = await this.pool.query(
+      `INSERT INTO encvoy_consumed_medusa_jwt (token_hash, expires_at)
+       VALUES ($1, to_timestamp($2))
+       ON CONFLICT (token_hash) DO NOTHING
+       RETURNING token_hash`,
+      [hash(token), expiresAt],
+    )
+    return result.rows.length === 1
   }
 
   /** Serialize work sharing a key across app processes using a transaction lock. */

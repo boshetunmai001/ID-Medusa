@@ -1,6 +1,6 @@
 import type { ExecArgs } from "@medusajs/framework/types";
 import { Modules } from "@medusajs/framework/utils";
-import { entityId } from "@local/medusa-auth-encvoy";
+import { entityId } from "medusa-plugin-encvoy-id";
 import { stateStore } from "../lib/state-store";
 
 // Run only from a trusted server shell after verifying the issuer and subject.

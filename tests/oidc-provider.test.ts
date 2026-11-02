@@ -25,12 +25,17 @@ type TokenMode =
   | "userinfo-subject"
 
 const states = new WeakMap<EncvoyStateStore, Map<string, State>>()
+let stateStoreCalls: string[] = []
 const originalMethods = {
+  initialize: EncvoyStateStore.prototype.initialize,
   saveState: EncvoyStateStore.prototype.saveState,
   consumeState: EncvoyStateStore.prototype.consumeState,
   withLock: EncvoyStateStore.prototype.withLock,
 }
 
+EncvoyStateStore.prototype.initialize = async function () {
+  stateStoreCalls.push("initialize")
+}
 EncvoyStateStore.prototype.saveState = async function (
   state,
   browserProof,
@@ -38,6 +43,7 @@ EncvoyStateStore.prototype.saveState = async function (
   nonce,
   context = "",
 ) {
+  stateStoreCalls.push("save")
   let records = states.get(this)
   if (!records) {
     records = new Map()
@@ -47,6 +53,7 @@ EncvoyStateStore.prototype.saveState = async function (
 }
 
 EncvoyStateStore.prototype.consumeState = async function (state, browserProof, context = "") {
+  stateStoreCalls.push("consume")
   const records = states.get(this)
   const stored = records?.get(state)
   if (
@@ -190,8 +197,10 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
 
   await t.test("successful verified token creates a customer identity and uses PKCE", async () => {
     mode = "valid"
+    stateStoreCalls = []
     const started = await provider.authenticate(startInput, {} as never)
     assert.equal(started.success, true)
+    assert.deepEqual(stateStoreCalls, ["initialize", "save"])
     assert.ok(started.location)
     authorizationEndpoint = started.location!
     const authorization = new URL(started.location!)
@@ -223,6 +232,7 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
       body: {},
     }, authService as never)
     assert.equal(callback.success, true)
+    assert.deepEqual(stateStoreCalls, ["initialize", "save", "initialize", "consume"])
     assert.equal(callback.authIdentity?.id, "auth_1")
     assert.equal(observedVerifier.length > 40, true)
     assert.equal(await oidc.calculatePKCECodeChallenge(observedVerifier), challenge)
@@ -260,6 +270,7 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
       },
       update: async () => { updates++; return identity },
     }
+    const loginIds: unknown[] = []
     for (let attempt = 0; attempt < 2; attempt++) {
       const start = await provider.authenticate(startInput, {} as never)
       assert.equal(start.success, true)
@@ -273,9 +284,13 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
       }, service as never)
       assert.equal(result.success, true)
       assert.equal(result.authIdentity?.id, "auth_repeat")
+      loginIds.push(result.authIdentity?.app_metadata?.encvoy_login_id)
     }
     assert.equal(creates, 1)
     assert.equal(updates, 1)
+    assert.equal(typeof loginIds[0], "string")
+    assert.notEqual(loginIds[0], loginIds[1])
+    assert.equal(identity?.app_metadata?.encvoy_login_id, undefined)
   })
 
   for (const invalidMode of [
@@ -535,6 +550,7 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
 })
 
 test.after(() => {
+  EncvoyStateStore.prototype.initialize = originalMethods.initialize
   EncvoyStateStore.prototype.saveState = originalMethods.saveState
   EncvoyStateStore.prototype.consumeState = originalMethods.consumeState
   EncvoyStateStore.prototype.withLock = originalMethods.withLock

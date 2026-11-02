@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from "@medusajs/framework/utils";
 import { logger } from "@medusajs/framework/logger";
+const { adminSecurityHeadersPlugin } = require("./src/admin/lib/security-headers.ts");
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd());
 
@@ -22,7 +23,7 @@ safeLogger.shouldLog = (level: string) => level !== "http" && logger.shouldLog(l
 safeLogger.http = () => {};
 
 const provider = (actorType: "customer" | "user") => ({
-  resolve: "@local/medusa-auth-encvoy",
+  resolve: "medusa-plugin-encvoy-id",
   id: `encvoy-${actorType}`,
   options: {
     actorType,
@@ -53,6 +54,9 @@ module.exports = defineConfig({
       authMethodsPerActor: { customer: ["encvoy-customer"], user: ["encvoy-user"] },
     },
   },
-  admin: { backendUrl: origin },
+  admin: {
+    backendUrl: origin,
+    vite: () => ({ plugins: [adminSecurityHeadersPlugin] }),
+  },
   modules: [{ resolve: "@medusajs/medusa/auth", options: { providers: [provider("customer"), provider("user")] } }],
 });

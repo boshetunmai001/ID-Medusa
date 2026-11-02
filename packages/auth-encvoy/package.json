@@ -1,8 +1,17 @@
 {
-  "name": "@local/medusa-auth-encvoy",
+  "name": "medusa-plugin-encvoy-id",
   "version": "0.1.0",
   "type": "module",
+  "license": "MIT",
   "description": "Encvoy ID OpenID Connect authentication provider for Medusa v2",
+  "keywords": ["medusa", "medusa-plugin", "medusa-provider", "authentication", "oidc", "openid-connect", "encvoy-id"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/boshetunmai001/ID-Medusa.git",
+    "directory": "packages/auth-encvoy"
+  },
+  "homepage": "https://github.com/boshetunmai001/ID-Medusa/tree/main/packages/auth-encvoy",
+  "bugs": { "url": "https://github.com/boshetunmai001/ID-Medusa/issues" },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": ["dist"],
@@ -10,7 +19,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "peerDependencies": { "@medusajs/framework": "2.21.2" },
+  "peerDependencies": { "@medusajs/framework": "2.22.2" },
   "dependencies": { "openid-client": "6.8.8", "pg": "8.16.3" },
   "devDependencies": { "@types/pg": "8.15.6" },
   "engines": { "node": ">=22.18.0 <23" }

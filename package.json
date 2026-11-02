@@ -5,15 +5,22 @@
   "workspaces": ["packages/*", "examples/medusa"],
   "engines": { "node": ">=22.18.0 <23" },
   "scripts": {
-    "build": "npm run build --workspace @local/medusa-auth-encvoy",
+    "build": "npm run build --workspace medusa-plugin-encvoy-id",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "node scripts/test.mjs"
   },
   "devDependencies": {
     "@types/node": "22.18.6",
     "tsx": "4.20.6",
     "ts-node": "10.9.2",
-    "react-router-dom": "6.30.4",
     "typescript": "5.9.3"
+  },
+  "overrides": {
+    "@graphql-tools/utils": "12.1.0",
+    "ajv": "8.18.0",
+    "bullmq": "5.81.5",
+    "glob": "14.0.3",
+    "lodash": "4.18.1",
+    "minimatch": "11.0.4"
   }
 }

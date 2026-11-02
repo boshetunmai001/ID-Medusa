@@ -7,6 +7,7 @@ export async function postEncvoyUserAuth<T>(path: UserAuthPath, body: Record<str
       method: "POST",
       credentials: "same-origin",
       cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
       headers: { accept: "application/json", "content-type": "application/json" },
       body: JSON.stringify(body),
     });

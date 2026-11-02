@@ -53,7 +53,7 @@ function EncvoyLogin() {
     }
   };
   return <div id="encvoy-login" style={{ padding: "16px 0", width: "100%" }}>
-    {/* Medusa 2.21.2 renders automatic SSO buttons after login.after widgets.
+    {/* Medusa renders automatic SSO buttons after login.after widgets.
         This example uses its own fixed callback and never invokes that flow.
         Keep this presentation selector under review when upgrading the Admin. */}
     <style>{"#encvoy-login ~ div { display: none; }"}</style>

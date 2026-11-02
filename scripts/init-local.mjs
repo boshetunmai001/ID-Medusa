@@ -16,7 +16,7 @@ try {
   const values = {
     LOCAL_DATABASE_PASSWORD: databasePassword,
     DATABASE_URL: `postgresql://medusa:${databasePassword}@127.0.0.1:55432/medusa`,
-    ENCVOY_DATABASE_URL: `postgresql://medusa:${databasePassword}@127.0.0.1:55432/encvoy`,
+    ENCVOY_DATABASE_URL: `postgresql://medusa:${databasePassword}@127.0.0.1:55433/encvoy_source`,
     REDIS_URL: "redis://127.0.0.1:56379/1",
     ENCVOY_ISSUER: "http://localhost:9090",
     CLIENT_ID: randomUUID(),

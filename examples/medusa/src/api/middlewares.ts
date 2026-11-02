@@ -1,11 +1,24 @@
 import { randomBytes } from "node:crypto";
 import { authenticate, defineMiddlewares, MedusaNextFunction, MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
+import { stateStore } from "../lib/state-store";
 
 const origin = () => process.env.MEDUSA_BROWSER_ORIGIN!;
 
 function browserPost(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
   res.setHeader("Cache-Control", "no-store");
   if (req.headers.origin !== origin()) return res.status(403).json({ message: "invalid_origin" });
+  next();
+}
+
+function redirectProfileNavigation(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
+  const acceptedTypes = (req.headers.accept || "").split(",").map((value) => {
+    const [type, ...parameters] = value.trim().toLowerCase().split(";");
+    const quality = parameters.find((parameter) => /^\s*q\s*=/.test(parameter));
+    return { type, quality: quality ? Number(quality.split("=")[1]) : 1 };
+  });
+  const qualityFor = (type: string) => acceptedTypes.find((accepted) => accepted.type === type)?.quality || 0;
+  const htmlQuality = Math.max(qualityFor("text/html"), qualityFor("application/xhtml+xml"));
+  if (htmlQuality > 0 && htmlQuality >= qualityFor("application/json")) return res.redirect(302, "/demo/profile");
   next();
 }
 
@@ -42,6 +55,35 @@ function regenerateSession(req: MedusaRequest, _res: MedusaResponse, next: Medus
   req.session.regenerate((error: Error | null) => next(error || undefined));
 }
 
+async function consumeEncvoyJwt(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
+  const authContext = (req as unknown as { auth_context?: Record<string, unknown> }).auth_context;
+  if (authContext?.auth_provider !== "encvoy-customer") return next();
+
+  const authorization = req.headers.authorization || "";
+  const token = /^Bearer ([^\s]+)$/i.exec(authorization)?.[1];
+  const expiresAt = authContext.exp;
+  if (!token || typeof expiresAt !== "number") {
+    return res.status(401).json({ message: "invalid_token" });
+  }
+
+  try {
+    await stateStore().initialize();
+    const firstUse = await stateStore().consumeMedusaJwt(token, expiresAt);
+    if (!firstUse) return res.status(401).json({ message: "token_already_used" });
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+function denyEncvoyRefresh(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
+  const provider = (req as unknown as { auth_context?: { auth_provider?: string } }).auth_context?.auth_provider;
+  if (provider === "encvoy-customer" || provider === "encvoy-user") {
+    return res.status(401).json({ message: "reauthentication_required" });
+  }
+  next();
+}
+
 const denyProvisioning = (_req: MedusaRequest, res: MedusaResponse) => res.status(403).json({ message: "Use the Encvoy account completion endpoint. Automatic account linking is disabled." });
 
 export default defineMiddlewares({
@@ -52,12 +94,11 @@ export default defineMiddlewares({
     { matcher: "/auth/:provider/user", middlewares: [denyProvisioning] },
     { matcher: "/store/customers", methods: ["POST"], middlewares: [denyProvisioning] },
     { matcher: "/auth/session", methods: ["POST", "DELETE"], middlewares: [browserPost] },
-    { matcher: "/auth/session", methods: ["POST"], middlewares: [authenticate("customer", "bearer"), regenerateSession] },
+    { matcher: "/auth/session", methods: ["POST"], middlewares: [authenticate("customer", "bearer"), consumeEncvoyJwt, regenerateSession] },
     // Override the native session-first context with the explicitly supplied token.
-    { matcher: "/auth/token/refresh", methods: ["POST"], middlewares: [browserPost, authenticate("*", "bearer", { allowUnregistered: true, requireMfa: false })] },
+    { matcher: "/auth/token/refresh", methods: ["POST"], middlewares: [browserPost, authenticate("*", "bearer", { allowUnregistered: true, requireMfa: false }), denyEncvoyRefresh] },
     { matcher: "/encvoy/customer/complete", methods: ["POST"], middlewares: [browserPost, authenticate("customer", "bearer", { allowUnregistered: true })] },
-    { matcher: "/encvoy/profile", methods: ["GET"], middlewares: [authenticate("customer", "session")] },
-    { matcher: "/demo/profile", methods: ["GET"], middlewares: [authenticate("customer", "session")] },
+    { matcher: "/encvoy/profile", methods: ["GET"], middlewares: [redirectProfileNavigation, authenticate("customer", "session")] },
     { matcher: /^\/demo(?:\/.*)?$/, middlewares: [headers] },
     { matcher: /^\/app(?:\/.*)?$/, middlewares: [headers] },
   ],

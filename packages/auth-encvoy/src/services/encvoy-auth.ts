@@ -95,6 +95,7 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
       const codeVerifier = oidc.randomPKCECodeVerifier()
       const codeChallenge = await oidc.calculatePKCECodeChallenge(codeVerifier)
 
+      await this.stateStore_.initialize()
       await this.stateStore_.saveState(
         state,
         browserProof,
@@ -144,6 +145,7 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
 
     let stored: Awaited<ReturnType<EncvoyStateStore["consumeState"]>>
     try {
+      await this.stateStore_.initialize()
       stored = await this.stateStore_.consumeState(
         state.value,
         browserProof,
@@ -211,7 +213,19 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
       if (!authIdentity) {
         return failure(NOT_AUTHORIZED)
       }
-      return { success: true, authIdentity }
+      // Medusa signs app_metadata into its JWT. Add a per-callback claim to the
+      // returned identity (without persisting it) so a fresh OIDC login always
+      // produces a distinct one-time session token, even within the same second.
+      return {
+        success: true,
+        authIdentity: {
+          ...authIdentity,
+          app_metadata: {
+            ...(authIdentity.app_metadata ?? {}),
+            encvoy_login_id: randomBytes(16).toString("hex"),
+          },
+        },
+      }
     } catch (error) {
       return failure(this.publicError(error, "callback"))
     }

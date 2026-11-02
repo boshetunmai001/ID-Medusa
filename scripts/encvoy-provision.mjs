@@ -38,6 +38,9 @@ const ids = parseEnv(
 const required = ["DOMAIN", "ADMIN_LOGIN", "ADMIN_PASSWORD", "CLIENT_ID"];
 const missing = required.filter((key) => !env.get(key));
 if (missing.length) throw new Error(`Missing stand settings: ${missing.join(", ")}`);
+if (env.get("DOMAIN") !== "http://localhost:9090") {
+  throw new Error("This provisioner is restricted to the documented localhost Encvoy stand.");
+}
 
 const api = new URL("http://127.0.0.1:3005/api/v1/");
 const authorization = `Basic ${Buffer.from(
@@ -215,6 +218,10 @@ await request("users/me");
 // password through Encvoy's supported user API before creating any test fixtures.
 const replacementPassword = env.get("ENCVOY_ADMIN_DECOY_PASSWORD");
 if (!replacementPassword) throw new Error("Missing local decoy-admin replacement password");
+const seededEditor = await request("users/2");
+if (String(seededEditor?.id) !== "2" || seededEditor?.login !== "admin") {
+  throw new Error("The local Encvoy seed does not match the expected Editor account; refusing to change its password");
+}
 const form = new URLSearchParams({ password: replacementPassword });
 await request("users/2/password", {
   method: "PUT",
@@ -233,16 +240,10 @@ await saveClient(
   "http://localhost:9000/app/login",
 );
 
-const subjects = {
-  customer: await createOrReuseUser("customer"),
-  employee: await createOrReuseUser("employee"),
-  outsider: await createOrReuseUser("outsider"),
-};
+await createOrReuseUser("customer");
+await createOrReuseUser("employee");
+await createOrReuseUser("outsider");
 await persistClientEnv();
 
 console.log("Encvoy fixtures are ready through the local Encvoy API.");
-console.log(`Customer client ID: ${ids.get("ENCVOY_CUSTOMER_CLIENT_ID")}`);
-console.log(`Employee client ID: ${ids.get("ENCVOY_USER_CLIENT_ID")}`);
-console.log(`Employee subject: ${subjects.employee}`);
-console.log(`Customer subject: ${subjects.customer}; outsider subject: ${subjects.outsider}`);
-console.log("Client secrets and all fixture passwords are stored in private .local files.");
+console.log("Customer and employee clients and synthetic fixtures are ready; identifiers and credentials remain in private .local files.");

@@ -13,6 +13,8 @@ test("state storage hashes browser bindings and consumes only a live matching st
     return Promise.resolve({
       rows: text.includes("RETURNING code_verifier")
         ? [{ codeVerifier: "stored-verifier", nonce: "stored-nonce" }]
+        : text.includes("RETURNING token_hash")
+          ? [{ token_hash: "stored-token-hash" }]
         : [],
     }) as never
   } as never
@@ -44,6 +46,14 @@ test("state storage hashes browser bindings and consumes only a live matching st
     assert.match(deleteQuery.text, /RETURNING code_verifier AS "codeVerifier", nonce/)
     assert.notEqual(deleteQuery.values[0], "raw-state")
     assert.notEqual(deleteQuery.values[1], "raw-browser-proof")
+
+    assert.equal(await store.consumeMedusaJwt("raw-medusa-jwt", Math.floor(Date.now() / 1000) + 60), true)
+    const consumedJwt = statements.at(-1)!
+    assert.match(consumedJwt.text, /INSERT INTO encvoy_consumed_medusa_jwt/)
+    assert.match(consumedJwt.text, /ON CONFLICT \(token_hash\) DO NOTHING/)
+    assert.notEqual(consumedJwt.values[0], "raw-medusa-jwt")
+    assert.equal(consumedJwt.values[0], createHash("sha256").update("raw-medusa-jwt", "utf8").digest("hex"))
+    assert.equal(await store.consumeMedusaJwt("expired-medusa-jwt", Math.floor(Date.now() / 1000) - 1), false)
   } finally {
     Pool.prototype.query = originalQuery
     await store.close()

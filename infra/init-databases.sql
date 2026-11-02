@@ -1,1 +1,2 @@
-CREATE DATABASE encvoy;
+-- The Encvoy source build uses the separate encvoy-source-postgres profile.
+-- Do not create or migrate an Encvoy source database in Medusa's PostgreSQL service.

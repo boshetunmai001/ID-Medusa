@@ -17,16 +17,28 @@ git clone https://github.com/encvoy/id.git research/encvoy-id
 git -C research/encvoy-id checkout --detach 5579bf5c05464da48585be28a3863c915b9b704f
 ```
 
-The local PostgreSQL and Redis services come from `infra/compose.yaml`. Create
-the private Encvoy environment from `.local/infra.env`, then use the repository's
-Node 22 runtime. From the repository root, start the services in one terminal:
+The source build has its own PostgreSQL service and volume, separate from the
+Medusa database and the old `encvoy` database. Create the private Encvoy
+environment from `.local/infra.env`, then use the repository's Node 22 runtime.
+From the repository root, start the source-only database profile:
 
 ```sh
 export PATH="$PWD/.local/runtime/node_modules/node/bin:$PATH"
+docker compose --profile encvoy-source --env-file .local/infra.env -f infra/compose.yaml up -d --wait
 node scripts/encvoy-env.mjs
 node scripts/encvoy-build.mjs
 node scripts/encvoy-local.mjs
 ```
+
+This source profile uses `127.0.0.1:55433/encvoy_source`. Never point the
+source build at `127.0.0.1:55432/encvoy`: that older database was involved in
+a migration incident and is explicitly refused by the build guard. Prisma
+deployment changes schema; obtain approval before running it against any
+persistent database, and use only an isolated synthetic test database.
+The environment generator preserves an existing `.local/encvoy.env`; if it
+was created before this isolated profile existed, update only its `DATABASE_URL`
+to `postgresql://medusa:<existing-local-password>@127.0.0.1:55433/encvoy_source`.
+Do not print or share the full URL.
 
 After the source stand reports ready, provision it from a second terminal:
 
@@ -48,11 +60,17 @@ runner.
 
 ## Current source-build status
 
-The local database schema was applied and Prisma client generation succeeded.
-OIDC, auth, and shared components compile. The source stand remains **blocked**
-by two upstream build errors and was not used for provisioning or acceptance.
-The build must stop on these errors rather than serving a partial or
-transpiled build.
+The old source database at `127.0.0.1:55432/encvoy` has historical schema
+changes and must not be used. The source build now targets a separate Compose
+database at `127.0.0.1:55433/encvoy_source`; its migration has not been run in
+this verification pass. OIDC, auth, and shared components compile. At the pinned pristine commit, the
+backend and widget builds fail on the two upstream defects below. In the
+ignored working checkout, local uncommitted fixes for those defects have since
+allowed both backend and widget production builds to pass. This only confirms
+compilation: the patched source has not been run, provisioned, or accepted as
+a functioning Encvoy stand. The build script still checks out the pristine
+pinned source state, so it remains blocked until a deliberate tracked repair
+is reviewed.
 
 Backend check:
 
@@ -80,11 +98,14 @@ Turbopack reports the missing export for both client and server-rendered
 bundles.
 
 Both defects are present in the initial upstream import
-`ec4625631e4fc6ce85bcf8af5a07ed705ea5581a` and in the pinned commit. The
-remote exposes only `main`, with no tags or alternate branches, so the fetched
-history contains no earlier coherent snapshot to substitute. Upstream tracked
-application files remain unchanged. This source checkout needs a repair before
-it can run.
+`ec4625631e4fc6ce85bcf8af5a07ed705ea5581a` and in the pinned commit. The local
+ignored checkout has two uncommitted changes: add `TRUSTED_USER =
+'TRUSTED_USER'` to `UserRoles`; add and export `isTrustedKerberosProvider` as a
+type guard for `IGenericProvider` credentials providers. These changes repaired
+the compile errors only. The remote exposes only `main`, with no tags or
+alternate branches, so the fetched history contains no earlier coherent
+snapshot to substitute. Do not treat the local patch as an upstream fix or as
+runtime evidence.
 
 ## Official image release tested separately
 

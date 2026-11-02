@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import type { ExecArgs } from "@medusajs/framework/types";
 import { ContainerRegistrationKeys, generateJwtToken, Modules } from "@medusajs/framework/utils";
-import { verify } from "jsonwebtoken";
-import { entityId } from "@local/medusa-auth-encvoy";
+import { entityId } from "medusa-plugin-encvoy-id";
 import { completeCustomer } from "../lib/customer-account";
 import { stateStore } from "../lib/state-store";
 
@@ -283,22 +282,15 @@ export default async function checkIntegration({ container }: ExecArgs): Promise
         origin: browserOrigin,
       },
     });
-    assert.equal(refreshResponse.status, 200,
-      "refresh must validate the supplied bearer identity even with an older session cookie present");
-    const refreshed = await refreshResponse.json() as { token?: string };
-    assert.equal(typeof refreshed.token, "string", "refresh must return a Medusa JWT for the supplied bearer identity");
-    const refreshedClaims = verify(
-      refreshed.token!,
-      (config as { projectConfig: { http: { jwtSecret: string } } }).projectConfig.http.jwtSecret,
-    ) as { actor_type?: string; actor_id?: string };
-    assert.equal(refreshedClaims.actor_type, "customer");
-    assert.equal(refreshedClaims.actor_id, secondCustomer.id,
-      "refresh must not return a token for the account held in the older session cookie");
+    assert.equal(refreshResponse.status, 401,
+      "Envcoy customer JWT refresh must be refused even when an older session cookie is present");
+    const refreshError = await refreshResponse.json() as { message?: string };
+    assert.equal(refreshError.message, "reauthentication_required");
 
     const switchSession = await request("/auth/session", {
       method: "POST",
       headers: {
-        authorization: `Bearer ${refreshed.token}`,
+        authorization: `Bearer ${switchToken}`,
         cookie: sessionCookie,
         origin: browserOrigin,
       },

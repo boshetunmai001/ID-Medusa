@@ -41,7 +41,7 @@ try {
 
 const infra = parseEnv(await readFile(sourcePath, "utf8"));
 const required = [
-  "ENCVOY_DATABASE_URL",
+  "LOCAL_DATABASE_PASSWORD",
   "ADMIN_LOGIN",
   "ADMIN_PASSWORD",
   "CLIENT_ID",
@@ -52,13 +52,16 @@ if (missing.length) {
   throw new Error(`Missing required local infrastructure settings: ${missing.join(", ")}`);
 }
 
+const sourceDatabaseUrl = new URL("postgresql://medusa@127.0.0.1:55433/encvoy_source");
+sourceDatabaseUrl.password = infra.get("LOCAL_DATABASE_PASSWORD");
+
 const values = new Map([
   ["NODE_ENV", "development"],
   ["DOMAIN", "http://localhost:9090"],
   ["VITE_DOMAIN", "http://localhost:9090"],
   ["ID_HOST", "localhost:9090"],
   ["ID_BASE_PATH", ""],
-  ["DATABASE_URL", infra.get("ENCVOY_DATABASE_URL")],
+  ["DATABASE_URL", sourceDatabaseUrl.href],
   ["CLIENT_ID", infra.get("CLIENT_ID")],
   ["ADMIN_LOGIN", infra.get("ADMIN_LOGIN")],
   ["ADMIN_PASSWORD", infra.get("ADMIN_PASSWORD")],

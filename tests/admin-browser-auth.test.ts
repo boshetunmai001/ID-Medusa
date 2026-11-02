@@ -18,6 +18,7 @@ test("Admin start and callback preserve the browser-proof cookie in JWT mode", a
     assert.equal(call.init?.method, "POST")
     assert.equal(call.init?.credentials, "same-origin")
     assert.equal(call.init?.cache, "no-store")
+    assert.ok(call.init?.signal instanceof AbortSignal)
     assert.equal(new Headers(call.init?.headers).get("content-type"), "application/json")
     assert.equal(new Headers(call.init?.headers).get("accept"), "application/json")
     assert.deepEqual(JSON.parse(call.init?.body as string), body)

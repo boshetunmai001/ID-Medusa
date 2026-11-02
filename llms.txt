@@ -1,0 +1,57 @@
+# Encvoy ID authentication for Medusa v2
+
+> Local prototype and documentation for a Medusa Auth Module Provider using Encvoy ID over OpenID Connect.
+
+## Current state
+
+- Medusa target: 2.22.2 (full live HTTP acceptance passed 2026-11-02)
+- Node.js: 22.23.3
+- `openid-client`: 6.8.8
+- Encvoy runtime used for acceptance: vendor-distributed 3.6.19 images pinned by digest
+- Encvoy GitHub source version 1.2.0: separate checkout; backend and widget builds are blocked by upstream compile errors
+- Package name proposal: `medusa-plugin-encvoy-id@0.1.0`; registry lookup returned 404 when checked, but it has not been published or reserved
+- Recorded browser evidence predates the Medusa 2.22.2 dependency update: Chrome/Safari customer login, profile, logout, and repeat login passed; Safari pre-authorized employee login passed. Fresh Chrome/Safari checks on the current dependency tree and Safari Admin-menu logout remain pending. Firefox/Opera evidence is historical; Edge and Yandex are outside the assignment's requested Chrome/Safari matrix.
+- The current npm archive must be installed and smoke-tested in a clean Medusa 2.22.2 project before release. A prior 0.1.0 archive check used Medusa 2.21.2 and predates the current dependency update.
+
+## Quick start
+
+Use the repository root and follow the complete instructions in `README.md` under **Set up the local stand**. The local stand requires Node.js 22.23.3, npm, Docker Compose, and the documented image-import tools where needed.
+
+1. Install the pinned Node runtime if needed, then run `npm ci --legacy-peer-deps --no-audit --no-fund`.
+2. Run `node scripts/init-local.mjs` and start `infra/compose.yaml` with `.local/infra.env` as described in the README.
+3. Run `node scripts/encvoy-image-env.mjs`; follow `docs/encvoy-image.md` to import and verify the pinned Encvoy images, start the local image stand, and provision synthetic fixtures.
+4. Configure Medusa with `node scripts/configure-medusa.mjs --clients .local/encvoy-image-clients.env`.
+5. Build and start Medusa with the commands in the README. The customer demo is at `http://localhost:9000/demo`; the employee login is at `http://localhost:9000/app/login`.
+
+These steps are for the isolated local stand. They do not publish the package or create a public deployment. Do not replace `localhost` with `127.0.0.1`; the configured issuer, callback, origin, and browser cookies rely on the documented origin.
+
+## Provider configuration
+
+The example configures two provider instances, `encvoy-customer` and `encvoy-user`, and restricts each Medusa actor to its own provider. Required options are the exact OIDC `issuer`, a confidential client ID and server-side secret, fixed `callbackUrl`, exact `browserOrigin`, actor type, and shared PostgreSQL `databaseUrl`. See `packages/auth-encvoy/README.md`, `examples/medusa/medusa-config.ts`, and `examples/medusa/.env.example`.
+
+The provider needs the example's browser middleware and customer-account policy. Preserve POST and Origin checks, the HttpOnly browser-proof cookie, S256 PKCE, state/nonce validation, strict issuer/signature checks, one-time state consumption, and customer email-collision refusal. Employee login requires an existing Medusa user explicitly bound to an administrator-verified Encvoy subject; it does not create employee users.
+
+## Verification
+
+- `docs/verification.md` distinguishes protocol tests from the real Encvoy HTTP acceptance flow.
+- `npm test` creates a temporary local PostgreSQL cluster with synthetic data and removes it afterward. It does not use the Medusa development database. The separate opt-in PostgreSQL command in `docs/verification.md` writes/deletes synthetic rows in its configured target; do not run it against a client database without explicit user approval.
+- The real acceptance command uses a running local Medusa and Encvoy stand and synthetic `.invalid` fixtures. Read the scripts and target configuration before running it; it changes local test/business records.
+- Do not claim browser support beyond the evidence recorded in the verification document.
+
+## Security and limitations
+
+Keep `.local/` and `examples/medusa/.env` private. Never expose credentials, codes, tokens, browser cookies, or callback query strings. The local HTTP option is loopback-only and is rejected in production. Production needs HTTPS, secure cookies, exact origins/callbacks, protected secrets, and a separate operational review.
+
+Medusa logout does not end the Encvoy SSO session. Refresh is disabled for both Encvoy providers, but a copied Medusa JWT can call protected routes until its 30-minute expiry. Immediate Encvoy-driven revocation is not implemented. See `docs/security.md`.
+
+## Further reading
+
+- `README.md` — full local setup, employee binding, account behavior, and limits
+- `packages/auth-encvoy/README.md` — provider API and integration contract
+- `docs/registration.md` — Encvoy client settings
+- `docs/encvoy-image.md` — pinned image stand, import, and operations
+- `docs/encvoy-local.md` — separate source-build stand and its upstream build blockers
+- `docs/security.md` — identity, browser, account, and session security model
+- `docs/verification.md` — current automated, HTTP acceptance, and Safari evidence
+- `docs/article-oidc-login-medusa-v2.md` — draft publication article; not yet externally published
+- `docs/medusa-directory-listing.md` — draft catalog listing; package remains unpublished
