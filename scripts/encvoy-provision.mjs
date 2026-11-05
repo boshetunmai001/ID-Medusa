@@ -1,6 +1,7 @@
-import { readFile, writeFile, chmod } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { restrictFileMode } from "./lib/platform.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const localEnvPath = path.join(root, ".local/encvoy.env");
@@ -94,7 +95,7 @@ async function persistClientEnv() {
     if (value) output.set(key, value);
   }
   await writeFile(clientEnvPath, encodeEnv(output), { mode: 0o600 });
-  await chmod(clientEnvPath, 0o600);
+  await restrictFileMode(clientEnvPath, 0o600);
 }
 
 async function saveClient(key, name, callback) {

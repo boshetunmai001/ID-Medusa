@@ -1,15 +1,16 @@
 import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
+import { tmpdir } from "node:os";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const username = "medusa_test";
 const database = "medusa_test";
-const port = "5432";
+let port;
 let dataDirectory;
-let socketDirectory;
 let serverMayBeRunning = false;
 let testProcess;
 let interruptedBy;
@@ -55,17 +56,17 @@ async function main() {
     throw new Error(`npm test needs local PostgreSQL server tools: ${missing.join(", ")}. Install PostgreSQL and retry.`);
   }
 
-  const temporaryDirectory = await mkdtemp(`/tmp/encvoy-pg-${process.pid}-`);
+  port = await unusedLoopbackPort();
+  const temporaryDirectory = await mkdtemp(path.join(tmpdir(), `encvoy-pg-${process.pid}-`));
   dataDirectory = path.join(temporaryDirectory, "data");
-  socketDirectory = path.join(temporaryDirectory, "socket");
-  await mkdir(socketDirectory, { mode: 0o700 });
+  await mkdir(dataDirectory, { mode: 0o700 });
   await writeFile(path.join(temporaryDirectory, "server.log"), "", { mode: 0o600 });
 
   run("initdb", [
     "--pgdata", dataDirectory,
     "--username", username,
     "--auth-local=trust",
-    "--auth-host=reject",
+    "--auth-host=trust",
     "--no-instructions",
   ]);
 
@@ -73,16 +74,16 @@ async function main() {
   run("pg_ctl", [
     "--pgdata", dataDirectory,
     "--log", path.join(temporaryDirectory, "server.log"),
-    "--options", `-k ${socketDirectory} -p ${port} -c listen_addresses=`,
+    "--options", `-h 127.0.0.1 -p ${port}`,
     "--wait", "start",
   ]);
-  run("createdb", ["--host", socketDirectory, "--port", port, "--username", username, database]);
+  run("createdb", ["--host", "127.0.0.1", "--port", String(port), "--username", username, database]);
 
   let ready = false;
   for (let attempt = 0; attempt < 40; attempt += 1) {
     if (interruptedBy) throw new Error(`Test run interrupted by ${interruptedBy}.`);
     try {
-      run("pg_isready", ["--host", socketDirectory, "--port", port, "--username", username, "--dbname", database], { capture: true });
+      run("pg_isready", ["--host", "127.0.0.1", "--port", String(port), "--username", username, "--dbname", database], { capture: true });
       ready = true;
       break;
     } catch {
@@ -94,8 +95,7 @@ async function main() {
   const testFiles = (await readdir(path.join(root, "tests")))
     .filter((file) => file.endsWith(".test.ts"))
     .map((file) => path.join(root, "tests", file));
-  const databaseUrl = new URL(`postgresql://${username}@localhost:${port}/${database}`);
-  databaseUrl.searchParams.set("host", socketDirectory);
+  const databaseUrl = new URL(`postgresql://${username}@127.0.0.1:${port}/${database}`);
   const tsx = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
   const exitCode = await new Promise((resolve, reject) => {
     testProcess = spawn(process.execPath, [tsx, "--test", ...testFiles], {
@@ -116,6 +116,22 @@ async function main() {
     process.exitCode = exitCode;
     throw new Error(interruptedBy ? `Test run interrupted by ${interruptedBy}.` : `Test suite failed with exit code ${exitCode}.`);
   }
+}
+
+async function unusedLoopbackPort() {
+  const server = net.createServer();
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    await new Promise((resolve) => server.close(resolve));
+    throw new Error("Could not allocate an isolated PostgreSQL port.");
+  }
+  const { port: selectedPort } = address;
+  await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  return selectedPort;
 }
 
 try {

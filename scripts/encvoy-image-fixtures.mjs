@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
-import { chmod, readFile, writeFile, rename } from "node:fs/promises";
+import { readFile, writeFile, rename } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { fixturePassword } from "./lib/fixture-password.mjs";
+import { restrictFileMode, setPrivateUmask } from "./lib/platform.mjs";
 
-process.umask(0o077);
+setPrivateUmask();
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const local = path.join(root, ".local");
@@ -44,7 +45,7 @@ async function main() {
   fixtures.ENCVOY_IMAGE_EDITOR_PASSWORD ||= fixturePassword();
   const temporary = `${fixturePath}.${process.pid}.tmp`;
   await writeFile(temporary, `${Object.entries(fixtures).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join("\n")}\n`, { mode: 0o600, flag: "wx" });
-  await chmod(temporary, 0o600);
+  await restrictFileMode(temporary, 0o600);
   await rename(temporary, fixturePath);
   console.log("Prepared private Editor fixtures from the pinned Encvoy backend image; credential values are suppressed.");
 }

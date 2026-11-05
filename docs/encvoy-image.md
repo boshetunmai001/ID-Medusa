@@ -49,6 +49,19 @@ chmod 755 .local/bin/crane
 
 The expected SHA-256 for the official release archive is `2231fc8df8806d20d680ff1225db44e095a55dd6ac1ae8eced4faf4b278b78fb`, as listed in the release's [`checksums.txt`](https://github.com/google/go-containerregistry/releases/download/v0.22.1/checksums.txt). `scripts/encvoy-image-import.mjs` checks that archive checksum, verifies that the installed executable matches the archive member and reports version 0.22.1, then downloads missing OCI layouts through host-side `crane`. It verifies each manifest, config, compressed layer, platform, and imported rootfs diff ID before writing `.local/encvoy-image-local.override.yaml` and a private verification record. It does not modify the pinned image references in Compose.
 
+On Windows x64, run these steps in PowerShell and use the official Windows x86_64 release archive. The import script selects the published checksum for `win32-x64`, verifies `crane.exe`, and rejects unsupported host architectures:
+
+```powershell
+New-Item -ItemType Directory -Force .local/bin | Out-Null
+Invoke-WebRequest -Uri 'https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Windows_x86_64.tar.gz' -OutFile '.local/crane-0.22.1.tar.gz'
+$expected = '0e073ea8192c3b8442ec8aaf44d53c1050a09084669fae3a6ceb0f2026cf8b21'
+$actual = (Get-FileHash '.local/crane-0.22.1.tar.gz' -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw 'crane archive checksum mismatch' }
+tar.exe -xzf .local/crane-0.22.1.tar.gz -C .local/bin crane.exe
+```
+
+The expected SHA-256 is `0e073ea8192c3b8442ec8aaf44d53c1050a09084669fae3a6ceb0f2026cf8b21`, from the official release [`checksums.txt`](https://github.com/google/go-containerregistry/releases/download/v0.22.1/checksums.txt). Docker Desktop must be running with Linux containers enabled. The pinned Encvoy images target `linux/amd64`; Docker Desktop supplies the Linux container engine.
+
 After importing the images, extract the initial Editor fixture from the verified pinned backend layer, then validate and start the isolated core:
 
 ```sh

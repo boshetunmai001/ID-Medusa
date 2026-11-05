@@ -24,7 +24,20 @@ Pins: Node.js **22.23.3**, Medusa **2.22.2**, `openid-client` **6.8.8**, and the
 
 ## Set up the local stand
 
-Prerequisites: Docker Compose, npm, `curl`, `shasum`, and `tar`. Work from this repository root. These commands create only local resources. If Node 22.23.3 is not already selected, install the private runtime and install the locked workspace dependencies:
+On Windows x64, use PowerShell and Docker Desktop with Linux containers enabled. The setup commands below include PowerShell equivalents. Install PostgreSQL so its server tools (`initdb`, `postgres`, `pg_ctl`, `createdb`, and `pg_isready`) are available on `PATH` before running `npm test`. WSL 2 remains an alternative environment.
+
+Prerequisites: Git, Docker Desktop / Compose, npm, tar, and the PostgreSQL server tools for tests. Work from this repository root. These commands create only local resources. If Node 22.23.3 is not already selected, install the private runtime and locked workspace dependencies.
+
+In PowerShell:
+
+```powershell
+npm install --prefix .local/runtime --save-exact node@22.23.3 --no-audit --no-fund
+$env:PATH = "$PWD\.local\runtime\node_modules\node\bin;$env:PATH"
+node --version
+npm ci --legacy-peer-deps --no-audit --no-fund
+```
+
+In macOS Terminal:
 
 ```sh
 npm install --prefix .local/runtime --save-exact node@22.23.3 --no-audit --no-fund

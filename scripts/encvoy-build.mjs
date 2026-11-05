@@ -3,12 +3,13 @@ import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { assertLocalEncvoyDatabase } from "./lib/local-encvoy-database.mjs";
+import { pinnedNodePath, withPathDirectories } from "./lib/platform.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const source = path.join(root, "research/encvoy-id");
 const locksDirectory = path.join(root, "infra/encvoy-locks");
 const envPath = process.env.ENCVOY_ENV_FILE || path.join(root, ".local/encvoy.env");
-const nodePath = path.join(root, ".local/runtime/node_modules/node/bin/node");
+const nodePath = pinnedNodePath(root);
 const buildStampPath = path.join(root, ".local/encvoy-build-stamp.json");
 const expectedSourceCommit = "5579bf5c05464da48585be28a3863c915b9b704f";
 
@@ -149,7 +150,7 @@ async function main() {
   const env = {
     ...process.env,
     ...Object.fromEntries(config),
-    PATH: `${path.dirname(nodePath)}:${process.env.PATH || ""}`,
+    PATH: withPathDirectories(process.env, [path.dirname(nodePath)]).PATH,
   };
 
   console.log("Installing and locking Encvoy dependencies in the isolated pinned checkout…");

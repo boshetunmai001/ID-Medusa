@@ -1,13 +1,14 @@
-import { readFile, writeFile, chmod, rename } from "node:fs/promises";
+import { readFile, writeFile, rename } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { parseEnv } from "node:util";
 import * as oidc from "openid-client";
 import { LocalHttpBrowser, LocalCheckError, requireCheck as check } from "./lib/local-http-browser.mjs";
 import { verifyImageSeed } from "./lib/verify-image-seed.mjs";
+import { restrictFileMode, setPrivateUmask } from "./lib/platform.mjs";
 
 // Local-only provisioning through Encvoy 3.6.19's real OIDC and administration API.
 // The vendor's built-in public client bootstraps the seeded Editor account.
-process.umask(0o077);
+setPrivateUmask();
 const root = new URL("../", import.meta.url);
 const origin = "http://localhost:9090";
 const stateFile = new URL(".local/encvoy-image-bootstrap.json", root);
@@ -45,7 +46,7 @@ function clientListItems(result) {
 async function privateAtomicWrite(file, content) {
   const temporary = new URL(file.href + `.${process.pid}.tmp`);
   await writeFile(temporary, content, { mode: 0o600 });
-  await chmod(temporary, 0o600);
+  await restrictFileMode(temporary, 0o600);
   await rename(temporary, file);
 }
 
@@ -188,10 +189,11 @@ async function main() {
     stage = `register-${actor.toLowerCase()}-client`;
     const key = `ENCVOY_${actor}_CLIENT_ID`;
     const secretKey = `ENCVOY_${actor}_CLIENT_SECRET`;
+    const displayName = `Medusa ${actor.toLowerCase()} local demo`;
     if (clients[key]) {
       const existing = await api(`clients/${encodeURIComponent(clients[key])}`);
       const expected = {
-        name: existing?.name,
+        name: displayName,
         domain: "http://localhost:9000",
         redirect_uris: ["http://localhost:9000" + callback],
         grant_types: ["authorization_code"], response_types: ["code"],
@@ -200,25 +202,31 @@ async function main() {
       };
       check(String(existing?.client_id) === clients[key] && clientMatches(existing, expected, null) &&
         existing.client_secret === clients[secretKey], "The saved application does not match its callback/configuration or lacks its secret.");
+      if (existing.name !== displayName) {
+        await api(`clients/${encodeURIComponent(clients[key])}`, "PUT", { name: displayName });
+        const renamed = await api(`clients/${encodeURIComponent(clients[key])}`);
+        check(renamed?.name === displayName && clientMatches(renamed, expected), "The saved application could not be given a readable display name.");
+      }
       continue;
     }
     let intent = progress.clientIntents[actor];
     if (!intent) {
       const nonce = randomBytes(16).toString("hex");
-      intent = { nonce, name: `Medusa ${actor.toLowerCase()} [${nonce}]`, status: "pending" };
+      intent = { nonce, name: displayName, status: "pending" };
       progress.clientIntents[actor] = intent;
       await saveProgress();
     }
-    check(/^[a-f0-9]{32}$/.test(intent.nonce) && intent.name === `Medusa ${actor.toLowerCase()} [${intent.nonce}]`, "The saved client creation intent is invalid.");
+    check(/^[a-f0-9]{32}$/.test(intent.nonce) && typeof intent.name === "string", "The saved client creation intent is invalid.");
     const expected = {
-      name: intent.name, domain: "http://localhost:9000",
+      name: displayName, domain: "http://localhost:9000",
       redirect_uris: ["http://localhost:9000" + callback], grant_types: ["authorization_code"], response_types: ["code"],
       token_endpoint_auth_method: "client_secret_basic", introspection_endpoint_auth_method: "client_secret_basic",
       revocation_endpoint_auth_method: "client_secret_basic", id_token_signed_response_alg: "RS256", subject_type: "public",
     };
     stage = `recover-${actor.toLowerCase()}-client`;
-    const listed = clientListItems(await api(`clients?search=${encodeURIComponent(intent.nonce)}&limit=100&offset=0`));
-    const candidates = listed.filter((client) => client?.name === intent.name);
+    const listed = clientListItems(await api("clients?limit=100&offset=0"));
+    const legacyName = `Medusa ${actor.toLowerCase()} [${intent.nonce}]`;
+    const candidates = listed.filter((client) => client?.name === displayName || client?.name === intent.name || client?.name === legacyName);
     check(listed.length === candidates.length, "The client search returned entries outside the saved creation intent.");
     check(candidates.length <= 1, "Several applications match the saved creation intent; refusing ambiguous recovery.");
     let created;
@@ -226,8 +234,13 @@ async function main() {
       const candidateId = candidates[0]?.client_id;
       check(typeof candidateId === "string", "The matching application list entry has no client ID.");
       const recovered = await api(`clients/${encodeURIComponent(candidateId)}`);
-      check(clientMatches(recovered, expected), "The matching application does not have the saved configuration or recoverable secret.");
+      check(clientMatches(recovered, expected, [displayName, intent.name, legacyName]), "The matching application does not have the saved configuration or recoverable secret.");
       created = { client_id: recovered.client_id, client_secret: recovered.client_secret };
+      if (recovered.name !== displayName) {
+        await api(`clients/${encodeURIComponent(candidateId)}`, "PUT", { name: displayName });
+        const renamed = await api(`clients/${encodeURIComponent(candidateId)}`);
+        check(renamed?.name === displayName && clientMatches(renamed, expected), "The recovered application could not be given a readable display name.");
+      }
     } else {
       stage = `create-${actor.toLowerCase()}-client`;
       created = await api("clients", "POST", expected);

@@ -1,17 +1,24 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isWindows, restrictFileMode, setPrivateUmask } from "./lib/platform.mjs";
 
-process.umask(0o077);
+setPrivateUmask();
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const local = path.join(root, ".local");
-const cranePath = path.join(local, "bin/crane");
+const cranePath = path.join(local, "bin", isWindows ? "crane.exe" : "crane");
 const craneArchivePath = path.join(local, "crane-0.22.1.tar.gz");
-const craneArchiveSha256 = "2231fc8df8806d20d680ff1225db44e095a55dd6ac1ae8eced4faf4b278b78fb";
+const cranePlatforms = {
+  "darwin-arm64": "2231fc8df8806d20d680ff1225db44e095a55dd6ac1ae8eced4faf4b278b78fb",
+  "linux-x64": "0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0",
+  "win32-x64": "0e073ea8192c3b8442ec8aaf44d53c1050a09084669fae3a6ceb0f2026cf8b21",
+};
+const hostPlatform = `${process.platform}-${process.arch}`;
+const craneArchiveSha256 = cranePlatforms[hostPlatform];
 const services = [
   {
     service: "id-db",
@@ -127,17 +134,18 @@ async function importIfMissing(service, layoutPath, archivePath) {
     return inspectImported(service.manifest);
   } catch {
     run("tar", ["-C", layoutPath, "-cf", archivePath, "."]);
-    await chmod(archivePath, 0o600);
+    await restrictFileMode(archivePath, 0o600);
     run("docker", ["image", "load", "--quiet", "--input", archivePath]);
     return inspectImported(service.manifest);
   }
 }
 
 async function main() {
+  requireCheck(craneArchiveSha256);
   await mkdir(local, { recursive: true, mode: 0o700 });
   stage = "verify official crane release archive";
   requireCheck(await hashFile(craneArchivePath) === `sha256:${craneArchiveSha256}`);
-  const extractedCrane = spawnSync("tar", ["-xOzf", craneArchivePath, "crane"], {
+  const extractedCrane = spawnSync("tar", ["-xOzf", craneArchivePath, isWindows ? "crane.exe" : "crane"], {
     stdio: ["ignore", "pipe", "ignore"],
     maxBuffer: 32 * 1024 * 1024,
   });
@@ -181,8 +189,8 @@ async function main() {
     writeFile(path.join(local, "encvoy-image-import-verification.json"), `${JSON.stringify({ verifiedAt: new Date().toISOString(), images: imported }, null, 2)}\n`, { mode: 0o600 }),
   ]);
   await Promise.all([
-    chmod(path.join(local, "encvoy-image-local.override.yaml"), 0o600),
-    chmod(path.join(local, "encvoy-image-import-verification.json"), 0o600),
+    restrictFileMode(path.join(local, "encvoy-image-local.override.yaml"), 0o600),
+    restrictFileMode(path.join(local, "encvoy-image-import-verification.json"), 0o600),
   ]);
   for (const image of imported) {
     console.log(`Verified ${image.service}: ${image.platform}, ${image.layerCount} layers, imported rootfs matches.`);

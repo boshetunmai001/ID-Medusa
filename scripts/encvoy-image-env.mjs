@@ -1,11 +1,12 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { fixturePassword } from "./lib/fixture-password.mjs";
+import { restrictFileMode, setPrivateUmask } from "./lib/platform.mjs";
 
-process.umask(0o077);
+setPrivateUmask();
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const localDirectory = path.join(root, ".local");
@@ -59,10 +60,10 @@ async function main() {
     await Promise.all([
       writeFile(frontEnvPath, renderEnv(frontEnv), { mode: 0o600 }),
       writeFile(frontConfigPath, renderFrontConfig(serviceEnv.CLIENT_ID, serviceEnv.DOMAIN), { mode: 0o600 }),
-      chmod(serviceEnvPath, 0o600),
-      chmod(fixtureEnvPath, 0o600),
+      restrictFileMode(serviceEnvPath, 0o600),
+      restrictFileMode(fixtureEnvPath, 0o600),
     ]);
-    await Promise.all([chmod(frontEnvPath, 0o600), chmod(frontConfigPath, 0o600)]);
+    await Promise.all([restrictFileMode(frontEnvPath, 0o600), restrictFileMode(frontConfigPath, 0o600)]);
     console.log("Private Encvoy image environments exist; frontend receives only the public client ID and local domain.");
     return;
   }
@@ -119,7 +120,7 @@ async function main() {
   } catch (error) {
     throw new Error("Could not create every private image environment; preserve existing values and inspect local setup");
   }
-  await Promise.all([chmod(serviceEnvPath, 0o600), chmod(fixtureEnvPath, 0o600), chmod(frontEnvPath, 0o600), chmod(frontConfigPath, 0o600)]);
+  await Promise.all([restrictFileMode(serviceEnvPath, 0o600), restrictFileMode(fixtureEnvPath, 0o600), restrictFileMode(frontEnvPath, 0o600), restrictFileMode(frontConfigPath, 0o600)]);
   console.log("Created private Encvoy image service, frontend, and synthetic fixture environments.");
 }
 

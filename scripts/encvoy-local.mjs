@@ -1,18 +1,19 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, chmod, access } from "node:fs/promises";
+import { mkdir, readFile, access } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { pinnedNodePath, restrictFileMode, setPrivateUmask, withPathDirectories } from "./lib/platform.mjs";
 
-process.umask(0o077);
+setPrivateUmask();
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const source = path.join(root, "research/encvoy-id");
 const localDirectory = path.join(root, ".local");
 const runtimeDirectory = path.join(localDirectory, "encvoy-runtime/oidc");
 const envPath = process.env.ENCVOY_ENV_FILE || path.join(localDirectory, "encvoy.env");
-const nodePath = path.join(root, ".local/runtime/node_modules/node/bin/node");
+const nodePath = pinnedNodePath(root);
 const buildStampPath = path.join(localDirectory, "encvoy-build-stamp.json");
 const expectedSourceCommit = "5579bf5c05464da48585be28a3863c915b9b704f";
 const children = [];
@@ -164,12 +165,12 @@ async function main() {
   const env = {
     ...process.env,
     ...runtimeEnv,
-    PATH: `${path.dirname(nodePath)}:${process.env.PATH || ""}`,
+    PATH: withPathDirectories(process.env, [path.dirname(nodePath)]).PATH,
     NODE_OPTIONS: `--require=${path.join(root, "scripts/encvoy-loopback.cjs")}`,
   };
 
   await mkdir(runtimeDirectory, { recursive: true, mode: 0o700 });
-  await chmod(runtimeDirectory, 0o700);
+  await restrictFileMode(runtimeDirectory, 0o700);
   for (const port of [3003, 3005, 3007, Number(env.ENCVOY_PORT || 9090)]) {
     await assertPortFree(port);
   }
