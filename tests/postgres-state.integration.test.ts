@@ -105,3 +105,32 @@ test("PostgreSQL state consumption and advisory locks serialize concurrent reque
     await store.close()
   }
 })
+
+test("employee grants bind to one user and are immediately revocable", {
+  skip: !enabled,
+}, async () => {
+  const store = new EncvoyStateStore(databaseUrl!)
+  const sql = new Pool({ connectionString: databaseUrl, max: 1 })
+  const suffix = randomBytes(16).toString("hex")
+  const userId = `usr_test_${suffix}`
+  const otherUserId = `usr_test_other_${suffix}`
+  const loginIds = [randomBytes(16).toString("hex"), randomBytes(16).toString("hex"), randomBytes(16).toString("hex")]
+
+  try {
+    await store.initialize()
+    await store.createEmployeeGrant(loginIds[0], userId, 300)
+    await store.createEmployeeGrant(loginIds[1], userId, 300)
+    await store.createEmployeeGrant(loginIds[2], otherUserId, 300)
+
+    assert.equal(await store.isEmployeeGrantActive(loginIds[0], userId), true)
+    assert.equal(await store.isEmployeeGrantActive(loginIds[0], otherUserId), false)
+    assert.equal(await store.revokeEmployeeGrants(userId), 2)
+    assert.equal(await store.isEmployeeGrantActive(loginIds[0], userId), false)
+    assert.equal(await store.isEmployeeGrantActive(loginIds[1], userId), false)
+    assert.equal(await store.isEmployeeGrantActive(loginIds[2], otherUserId), true)
+  } finally {
+    await sql.query("DELETE FROM encvoy_employee_session_grant WHERE login_id = ANY($1::text[])", [loginIds])
+    await sql.end()
+    await store.close()
+  }
+})

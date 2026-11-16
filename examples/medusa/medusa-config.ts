@@ -11,6 +11,7 @@ function required(name: string): string {
 }
 
 const origin = required("MEDUSA_BROWSER_ORIGIN");
+const employeeJwtLifetimeSeconds = 30 * 60;
 const localHttp = process.env.ENCVOY_ALLOW_INSECURE_LOCALHOST === "true";
 if (localHttp && (process.env.NODE_ENV === "production" || !["localhost", "127.0.0.1"].includes(new URL(origin).hostname))) {
   throw new Error("Local HTTP mode is restricted to loopback development.");
@@ -33,6 +34,7 @@ const provider = (actorType: "customer" | "user") => ({
     callbackUrl: `${origin}${actorType === "customer" ? "/demo/callback" : "/app/login"}`,
     browserOrigin: origin,
     databaseUrl: required("DATABASE_URL"),
+    employeeGrantLifetimeSeconds: employeeJwtLifetimeSeconds,
     allowInsecureLocalhost: localHttp,
   },
 });
@@ -50,7 +52,7 @@ module.exports = defineConfig({
       authCors: origin,
       jwtSecret: required("JWT_SECRET"),
       cookieSecret: required("COOKIE_SECRET"),
-      jwtExpiresIn: "30m",
+      jwtExpiresIn: `${employeeJwtLifetimeSeconds}s`,
       authMethodsPerActor: { customer: ["encvoy-customer"], user: ["encvoy-user"] },
     },
   },

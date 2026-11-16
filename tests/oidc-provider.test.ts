@@ -26,10 +26,12 @@ type TokenMode =
 
 const states = new WeakMap<EncvoyStateStore, Map<string, State>>()
 let stateStoreCalls: string[] = []
+let employeeGrantCalls: Array<{ loginId: string; userId: string; lifetimeSeconds: number }> = []
 const originalMethods = {
   initialize: EncvoyStateStore.prototype.initialize,
   saveState: EncvoyStateStore.prototype.saveState,
   consumeState: EncvoyStateStore.prototype.consumeState,
+  createEmployeeGrant: EncvoyStateStore.prototype.createEmployeeGrant,
   withLock: EncvoyStateStore.prototype.withLock,
 }
 
@@ -69,6 +71,9 @@ EncvoyStateStore.prototype.consumeState = async function (state, browserProof, c
 
 EncvoyStateStore.prototype.withLock = async function (_key, action) {
   return action()
+}
+EncvoyStateStore.prototype.createEmployeeGrant = async function (loginId, userId, lifetimeSeconds) {
+  employeeGrantCalls.push({ loginId, userId, lifetimeSeconds })
 }
 
 const primaryKey = generateKeyPairSync("rsa", { modulusLength: 2048 })
@@ -458,6 +463,7 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
 
   await t.test("user callbacks require a provisioned, user-only identity", async () => {
     mode = "valid"
+    employeeGrantCalls = []
     const userOptions = {
       ...options,
       actorType: "user" as const,
@@ -491,6 +497,7 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
       update: async () => { throw new Error("unexpected update") },
     } as never)
     assert.equal(missingIdentity.error, "not_authorized")
+    assert.equal(employeeGrantCalls.length, 0, "a denied identity must not create a session grant")
 
     const existing = {
       id: "auth_user_1",
@@ -518,6 +525,12 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
     } as never)
     assert.equal(authorized.success, true)
     assert.equal((authorized.authIdentity as { id?: string }).id, "auth_user_1")
+    const authorizedMetadata = (authorized.authIdentity as { app_metadata?: Record<string, unknown> }).app_metadata
+    assert.equal(employeeGrantCalls.length, 1)
+    assert.equal(employeeGrantCalls[0].userId, "usr_1")
+    assert.equal(employeeGrantCalls[0].lifetimeSeconds, 30 * 60)
+    assert.equal(employeeGrantCalls[0].loginId, authorizedMetadata?.encvoy_login_id)
+    assert.match(employeeGrantCalls[0].loginId, /^[a-f0-9]{32}$/)
 
     const thirdStart = await userProvider.authenticate(userStart, {} as never)
     authorizationEndpoint = thirdStart.location!
@@ -534,6 +547,7 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
       update: async () => { throw new Error("customer-linked identity must be denied") },
     } as never)
     assert.equal(linkedCustomer.error, "not_authorized")
+    assert.equal(employeeGrantCalls.length, 1, "a customer-linked identity must not create a session grant")
   })
 
   await t.test("unavailable discovery fails safely without returning a redirect or upstream details", async () => {
@@ -553,6 +567,7 @@ test.after(() => {
   EncvoyStateStore.prototype.initialize = originalMethods.initialize
   EncvoyStateStore.prototype.saveState = originalMethods.saveState
   EncvoyStateStore.prototype.consumeState = originalMethods.consumeState
+  EncvoyStateStore.prototype.createEmployeeGrant = originalMethods.createEmployeeGrant
   EncvoyStateStore.prototype.withLock = originalMethods.withLock
 })
 

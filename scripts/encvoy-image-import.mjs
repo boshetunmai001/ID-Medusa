@@ -23,9 +23,9 @@ const services = [
   {
     service: "id-db",
     archiveName: "postgres",
-    reference: "postgres:14.4@sha256:9ceb24f8c5f15c053d973a3610866f473690875dc13eb3282b45302189321040",
-    manifest: "sha256:cf3b0cf1dde2a82542e4b9de7f3ad058fdc819dea6499007035b838542b0bd5e",
-    config: "sha256:e09e90144645e02137d087f0dc059f4d2e3c6356ef8f9e40eeb15d1c901dbc73",
+    reference: "postgres:16.16@sha256:30551eca978d79ccf49d037bc297b5670baea61a04ceca42ff7fd3100163d3ce",
+    manifest: "sha256:2d5c77ae9b0e0944ffb92f8d8fc2fa2edb215cb0976da8bac34df917af417e87",
+    config: "sha256:6b7038c60456795649816e6ad91b015284a75af3bca7d236b7c6124b56a1d9a3",
   },
   {
     service: "id-redis",

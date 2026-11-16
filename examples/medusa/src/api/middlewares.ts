@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { authenticate, defineMiddlewares, MedusaNextFunction, MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
+import { Modules } from "@medusajs/framework/utils";
+import type { EncvoyStateStore } from "medusa-plugin-encvoy-id";
 import { stateStore } from "../lib/state-store";
 
 const origin = () => process.env.MEDUSA_BROWSER_ORIGIN!;
@@ -55,6 +57,34 @@ function regenerateSession(req: MedusaRequest, _res: MedusaResponse, next: Medus
   req.session.regenerate((error: Error | null) => next(error || undefined));
 }
 
+async function hydrateCompletedCustomer(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
+  const auth = (req as unknown as { auth_context?: {
+    actor_id?: string;
+    actor_type?: string;
+    auth_identity_id?: string;
+    auth_provider?: string;
+    app_metadata?: Record<string, unknown>;
+  } }).auth_context;
+  if (auth?.auth_provider !== "encvoy-customer") return next();
+  if (!auth.auth_identity_id) return res.status(401).json({ message: "invalid_customer_identity" });
+
+  try {
+    const identity = await req.scope.resolve(Modules.AUTH).retrieveAuthIdentity(auth.auth_identity_id);
+    const customerId = identity.app_metadata?.customer_id;
+    if (typeof customerId !== "string" || !customerId || identity.app_metadata?.user_id) {
+      return res.status(401).json({ message: "customer_account_not_completed" });
+    }
+    // The callback JWT predates account completion. Resolve the persisted link
+    // before creating a session, so Medusa receives a registered customer actor.
+    auth.actor_id = customerId;
+    auth.actor_type = "customer";
+    auth.app_metadata = identity.app_metadata;
+    next();
+  } catch {
+    res.status(503).json({ message: "customer_identity_check_unavailable" });
+  }
+}
+
 async function consumeEncvoyJwt(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
   const authContext = (req as unknown as { auth_context?: Record<string, unknown> }).auth_context;
   if (authContext?.auth_provider !== "encvoy-customer") return next();
@@ -76,6 +106,37 @@ async function consumeEncvoyJwt(req: MedusaRequest, res: MedusaResponse, next: M
   }
 }
 
+export async function requireActiveEncvoyEmployeeGrant(
+  req: MedusaRequest,
+  res: MedusaResponse,
+  next: MedusaNextFunction,
+  store: EncvoyStateStore = stateStore(),
+) {
+  const auth = (req as unknown as { auth_context?: {
+    actor_id?: string;
+    actor_type?: string;
+    auth_provider?: string;
+    app_metadata?: Record<string, unknown>;
+  } }).auth_context;
+  if (auth?.auth_provider !== "encvoy-user") return next();
+
+  const loginId = auth.app_metadata?.encvoy_login_id;
+  if (auth.actor_type !== "user" || !auth.actor_id || typeof loginId !== "string") {
+    return res.status(401).json({ message: "invalid_employee_token" });
+  }
+
+  try {
+    await store.initialize();
+    if (!await store.isEmployeeGrantActive(loginId, auth.actor_id)) {
+      return res.status(401).json({ message: "employee_session_revoked" });
+    }
+    next();
+  } catch {
+    // Fail closed: an unavailable grant store must not leave a JWT usable.
+    return res.status(503).json({ message: "employee_session_check_unavailable" });
+  }
+}
+
 function denyEncvoyRefresh(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
   const provider = (req as unknown as { auth_context?: { auth_provider?: string } }).auth_context?.auth_provider;
   if (provider === "encvoy-customer" || provider === "encvoy-user") {
@@ -94,9 +155,12 @@ export default defineMiddlewares({
     { matcher: "/auth/:provider/user", middlewares: [denyProvisioning] },
     { matcher: "/store/customers", methods: ["POST"], middlewares: [denyProvisioning] },
     { matcher: "/auth/session", methods: ["POST", "DELETE"], middlewares: [browserPost] },
-    { matcher: "/auth/session", methods: ["POST"], middlewares: [authenticate("customer", "bearer"), consumeEncvoyJwt, regenerateSession] },
+    { matcher: "/auth/session", methods: ["POST"], middlewares: [authenticate("customer", "bearer", { allowUnregistered: true }), hydrateCompletedCustomer, consumeEncvoyJwt, regenerateSession] },
     // Override the native session-first context with the explicitly supplied token.
     { matcher: "/auth/token/refresh", methods: ["POST"], middlewares: [browserPost, authenticate("*", "bearer", { allowUnregistered: true, requireMfa: false }), denyEncvoyRefresh] },
+    // Resolve a supplied JWT before enforcing employee-grant revocation. Native
+    // route authentication still enforces authorization for all other requests.
+    { matcher: /^\/admin(?:\/.*)?$/, middlewares: [authenticate("*", ["session", "bearer", "api-key"], { allowUnauthenticated: true }), requireActiveEncvoyEmployeeGrant] },
     { matcher: "/encvoy/customer/complete", methods: ["POST"], middlewares: [browserPost, authenticate("customer", "bearer", { allowUnregistered: true })] },
     { matcher: "/encvoy/profile", methods: ["GET"], middlewares: [redirectProfileNavigation, authenticate("customer", "session")] },
     { matcher: /^\/demo(?:\/.*)?$/, middlewares: [headers] },

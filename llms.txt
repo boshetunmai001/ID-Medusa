@@ -5,17 +5,19 @@
 ## Current state
 
 - Medusa target: 2.22.2 (full live HTTP acceptance passed 2026-11-02)
-- Node.js: 22.23.3
+- Node.js: 22.23.5
 - `openid-client`: 6.8.8
 - Encvoy runtime used for acceptance: vendor-distributed 3.6.19 images pinned by digest
 - Encvoy GitHub source version 1.2.0: separate checkout; backend and widget builds are blocked by upstream compile errors
 - Package name proposal: `medusa-plugin-encvoy-id@0.1.0`; registry lookup returned 404 when checked, but it has not been published or reserved
-- Recorded browser evidence predates the Medusa 2.22.2 dependency update: Chrome/Safari customer login, profile, logout, and repeat login passed; Safari pre-authorized employee login passed. Fresh Chrome/Safari checks on the current dependency tree and Safari Admin-menu logout remain pending. Firefox/Opera evidence is historical; Edge and Yandex are outside the assignment's requested Chrome/Safari matrix.
-- The current npm archive must be installed and smoke-tested in a clean Medusa 2.22.2 project before release. A prior 0.1.0 archive check used Medusa 2.21.2 and predates the current dependency update.
+- The three-page assignment PDF available with the handoff specifies Encvoy images based on 1.2; the reviewer refers to another edition naming 3.6.19, whose file was not available for comparison. Runtime acceptance used vendor-distributed Encvoy 3.6.19 images pinned by digest, not a verified build of source snapshot 1.2.0 and not evidence for Encvoy 1.2 image compatibility.
+- Final local package archive D SHA-1 `dfbffc858341a000f676acecdcfaf61ce373ae35` passed clean-consumer install, full/production audits, `npm ls`, typecheck, production build and full live HTTP acceptance on 2026-11-16; the HTTP suite includes refusal to create a session before customer account completion and immediate employee grant revocation. Chrome 157.0.8103.51 and Safari 18.6 on macOS 15.7.3 both passed customer login/profile/logout/repeat-login and employee Admin login/Orders/logout on final archive D in a clean consumer. Safari redirected a reopened Orders route to login after logout. Public npm lookup returns 404; install from a published version remains a post-publication check.
+- Firefox, Opera, and Yandex browser evidence is supplementary. Edge is unavailable on the Mac; neither is part of the attached PDF's Chrome/Safari request.
+- The final local npm archive was independently installed in a clean Medusa 2.22.2 project; install, typecheck, production build, live HTTP acceptance, and Chrome/Safari checks are complete and recorded in `docs/verification.md`. Published-version installation remains a separate post-publication check; the package is unpublished.
 
 ## Quick start
 
-Use the repository root and follow the complete instructions in `README.md` under **Set up the local stand**. The local stand requires Node.js 22.23.3, npm, Docker Compose, and the documented image-import tools where needed.
+Use the repository root and follow the complete instructions in `README.md` under **Set up the local stand**. The local stand requires Node.js 22.23.5, npm, Docker Compose, and the documented image-import tools where needed.
 
 1. Install the pinned Node runtime if needed, then run `npm ci --legacy-peer-deps --no-audit --no-fund`.
 2. Run `node scripts/init-local.mjs` and start `infra/compose.yaml` with `.local/infra.env` as described in the README.
@@ -42,7 +44,7 @@ The provider needs the example's browser middleware and customer-account policy.
 
 Keep `.local/` and `examples/medusa/.env` private. Never expose credentials, codes, tokens, browser cookies, or callback query strings. The local HTTP option is loopback-only and is rejected in production. Production needs HTTPS, secure cookies, exact origins/callbacks, protected secrets, and a separate operational review.
 
-Medusa logout does not end the Encvoy SSO session. Refresh is disabled for both Encvoy providers, but a copied Medusa JWT can call protected routes until its 30-minute expiry. Immediate Encvoy-driven revocation is not implemented. See `docs/security.md`.
+In the example, the Medusa session cookie, customer/employee JWTs, and employee grants expire after 30 minutes; JWT refresh is disabled. Customer logout destroys the native Medusa session, but a copied bearer JWT may still work until expiry. Admin logout clears only the current browser's JWT storage; copied employee JWTs still work until expiry unless their grants are revoked. Neither local logout ends Encvoy SSO, so a repeat login may not prompt for a password. Blocking an employee in Encvoy does not revoke an existing Medusa JWT/grant. For immediate employee offboarding, block the Encvoy identity and run `examples/medusa/src/scripts/revoke-employee.ts` for its verified Medusa user ID; the next protected Admin API request is denied. The script does not end Encvoy SSO or remove the explicit identity binding. Immediate customer JWT revocation is not implemented. See `docs/security.md`.
 
 ## Further reading
 

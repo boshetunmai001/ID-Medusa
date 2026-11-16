@@ -104,6 +104,19 @@ export class EncvoyStateStore {
       CREATE INDEX IF NOT EXISTS encvoy_consumed_medusa_jwt_expiry_idx
       ON encvoy_consumed_medusa_jwt (expires_at)
     `)
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS encvoy_employee_session_grant (
+        login_id text PRIMARY KEY,
+        user_id text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        expires_at timestamptz NOT NULL,
+        revoked_at timestamptz
+      )
+    `)
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS encvoy_employee_session_grant_user_idx
+      ON encvoy_employee_session_grant (user_id, expires_at)
+    `)
   }
 
   /** Store only hashes of the public state and browser proof. */
@@ -165,6 +178,42 @@ export class EncvoyStateStore {
       [hash(token), expiresAt],
     )
     return result.rows.length === 1
+  }
+
+  /** Register a single employee login grant before Medusa signs its JWT. */
+  async createEmployeeGrant(loginId: string, userId: string, lifetimeSeconds: number): Promise<void> {
+    if (!loginId || !userId || !Number.isSafeInteger(lifetimeSeconds) || lifetimeSeconds < 1) {
+      throw new Error("Invalid employee session grant")
+    }
+    await this.pool.query(
+      `DELETE FROM encvoy_employee_session_grant WHERE expires_at <= now()`,
+    )
+    await this.pool.query(
+      `INSERT INTO encvoy_employee_session_grant (login_id, user_id, expires_at)
+       VALUES ($1, $2, now() + ($3 * interval '1 second'))`,
+      [loginId, userId, lifetimeSeconds],
+    )
+  }
+
+  /** Check the signed login identifier and user binding on every Admin request. */
+  async isEmployeeGrantActive(loginId: string, userId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `SELECT 1 FROM encvoy_employee_session_grant
+       WHERE login_id = $1 AND user_id = $2 AND revoked_at IS NULL AND expires_at > now()`,
+      [loginId, userId],
+    )
+    return result.rows.length === 1
+  }
+
+  /** Revoke all currently active grants for one explicitly identified Medusa user. */
+  async revokeEmployeeGrants(userId: string): Promise<number> {
+    if (!userId) throw new Error("userId is required")
+    const result = await this.pool.query(
+      `UPDATE encvoy_employee_session_grant SET revoked_at = now()
+       WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()`,
+      [userId],
+    )
+    return result.rowCount ?? 0
   }
 
   /** Serialize work sharing a key across app processes using a transaction lock. */

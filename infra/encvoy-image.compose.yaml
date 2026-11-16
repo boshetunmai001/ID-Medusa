@@ -2,14 +2,14 @@ name: medusa-encvoy-image
 
 services:
   id-db:
-    image: postgres:14.4@sha256:9ceb24f8c5f15c053d973a3610866f473690875dc13eb3282b45302189321040
+    image: postgres:16.16@sha256:30551eca978d79ccf49d037bc297b5670baea61a04ceca42ff7fd3100163d3ce
     platform: linux/amd64
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?Run scripts/encvoy-image-env.mjs first}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/encvoy-image-env.mjs first}
       POSTGRES_DB: ${POSTGRES_DB:?Run scripts/encvoy-image-env.mjs first}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data-pg16:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\" >/dev/null 2>&1"]
       interval: 3s
@@ -129,7 +129,8 @@ services:
       driver: none
 
 volumes:
-  postgres-data:
+  postgres-data-pg16:
+    name: medusa-encvoy-image_postgres-data-pg16
   redis-data:
   redis-secure-seed:
   images:

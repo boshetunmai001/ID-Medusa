@@ -213,6 +213,18 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
       if (!authIdentity) {
         return failure(NOT_AUTHORIZED)
       }
+      const loginId = randomBytes(16).toString("hex")
+      if (this.config_.actorType === "user") {
+        const userId = authIdentity.app_metadata?.user_id
+        if (typeof userId !== "string" || userId.length === 0) {
+          return failure(NOT_AUTHORIZED)
+        }
+        await this.stateStore_.createEmployeeGrant(
+          loginId,
+          userId,
+          this.config_.employeeGrantLifetimeSeconds,
+        )
+      }
       // Medusa signs app_metadata into its JWT. Add a per-callback claim to the
       // returned identity (without persisting it) so a fresh OIDC login always
       // produces a distinct one-time session token, even within the same second.
@@ -222,7 +234,7 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
           ...authIdentity,
           app_metadata: {
             ...(authIdentity.app_metadata ?? {}),
-            encvoy_login_id: randomBytes(16).toString("hex"),
+            encvoy_login_id: loginId,
           },
         },
       }

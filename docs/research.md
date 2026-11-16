@@ -10,8 +10,8 @@ Research date: 2026-10-08. Runtime evidence is recorded separately in `STATUS.md
 | Encvoy version labels | package `1.2.0`, backend constant `1.2.17` | These labels differ; the commit is the authoritative source pin |
 | Medusa packages | `2.21.2` | Official documentation and npm registry |
 | openid-client | `6.8.8` | npm registry; installed declarations and implementation |
-| Node.js | `22.23.3` | Local pinned runtime and `.nvmrc` |
-| PostgreSQL / Redis | Image digests in `infra/compose.yaml` | Existing local Docker image manifests |
+| Node.js | `22.23.5` | Current repository pin in `.nvmrc`; unit, build, live HTTP, and browser runtime checks are dated individually in `verification.md` |
+| PostgreSQL / Redis | Encvoy PostgreSQL 16.16 and Redis image digests in `infra/encvoy-image.compose.yaml`; Medusa PostgreSQL 16 in `infra/compose.yaml` | Verified image manifests; Encvoy 16.16 clone and stack acceptance on 2026-11-13 |
 
 The source checkout is excluded from the integration package and remains under `research/encvoy-id`. No Encvoy or Medusa core changes are part of the integration. Encvoy's upstream quick start uses floating Docker tags and omits npm lockfiles. The local harness must preserve its resolved lockfiles before it can claim reproducibility. There is no tagged stable Encvoy release to select in this repository; the selected commit is a development snapshot, not a certified stable release.
 

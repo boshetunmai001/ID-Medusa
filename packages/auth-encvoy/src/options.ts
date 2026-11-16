@@ -8,6 +8,7 @@ export type EncvoyAuthProviderOptions = {
   actorType: EncvoyActorType
   databaseUrl: string
   browserOrigin: string
+  employeeGrantLifetimeSeconds?: number
   allowInsecureLocalhost?: boolean
   cookieName?: string
 }
@@ -17,6 +18,7 @@ export type ValidatedEncvoyAuthProviderOptions = EncvoyAuthProviderOptions & {
   callbackUrl: string
   browserOrigin: string
   cookieName: string
+  employeeGrantLifetimeSeconds: number
 }
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"])
@@ -86,6 +88,11 @@ export function validateOptions(
     throw new Error("cookieName must be a valid cookie token")
   }
 
+  const employeeGrantLifetimeSeconds = options.employeeGrantLifetimeSeconds ?? 30 * 60
+  if (!Number.isSafeInteger(employeeGrantLifetimeSeconds) || employeeGrantLifetimeSeconds < 1) {
+    throw new Error("employeeGrantLifetimeSeconds must be a positive integer")
+  }
+
   return {
     ...options,
     // Keep the configured identifier and redirect URI byte-for-byte. OIDC
@@ -94,6 +101,7 @@ export function validateOptions(
     callbackUrl: options.callbackUrl,
     browserOrigin: browserOriginUrl.origin,
     cookieName,
+    employeeGrantLifetimeSeconds,
   }
 }
 

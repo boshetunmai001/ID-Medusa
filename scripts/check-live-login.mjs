@@ -1,10 +1,15 @@
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
+import path from "node:path";
 import { LocalCheckError, LocalHttpBrowser, requireCheck as check } from "./lib/local-http-browser.mjs";
 
 const medusa = "http://localhost:9000";
 const issuer = "http://localhost:9090";
 const root = new URL("../", import.meta.url);
+const rootPath = fileURLToPath(root);
 let stage = "load-private-fixtures";
 
 async function main() {
@@ -219,6 +224,15 @@ async function main() {
   check(usersAfter.status === 200 && usersAfter.data?.count === usersBefore.data.count, "An unbound login created a Medusa employee.");
   console.log("PASS unbound Encvoy user denied employee access.");
 
+  stage = "uncompleted-customer-session";
+  const uncompletedBrowser = new LocalHttpBrowser();
+  const uncompleted = await login(uncompletedBrowser, "OUTSIDER");
+  check(uncompleted.completed.status === 200 && typeof uncompleted.completed.data?.token === "string", "Synthetic uncompleted customer identity did not authenticate at Encvoy.");
+  const prematureSession = await api(uncompletedBrowser, "/auth/session", "POST", uncompleted.completed.data.token);
+  check(prematureSession.status === 401 && prematureSession.data?.message === "customer_account_not_completed", `An uncompleted customer identity established a Medusa session (HTTP ${prematureSession.status}; ${prematureSession.data?.message ?? "no_message"}).`);
+  await expectNoCustomerSession(uncompletedBrowser, "An uncompleted customer identity accessed the protected profile.");
+  console.log("PASS customer session is refused until the persisted Medusa customer link exists.");
+
   stage = "prepare-existing-email-conflict";
   const conflictPath = `/admin/customers?email=${encodeURIComponent(fixtures.ENCVOY_OUTSIDER_EMAIL)}`;
   let conflictRecords = await api(employee, conflictPath, "GET", staff.completed.data.token);
@@ -240,6 +254,22 @@ async function main() {
   const unchanged = await api(employee, conflictPath, "GET", staff.completed.data.token);
   check(unchanged.status === 200 && unchanged.data?.count === 1 && unchanged.data?.customers?.[0]?.id === guest.id && unchanged.data?.customers?.[0]?.has_account === false, "Existing guest account changed after the conflicting login.");
   console.log("PASS real Encvoy login with an existing email is refused without taking over the guest account.");
+
+  stage = "revoke-employee-grants";
+  const currentProject = process.cwd();
+  const projectDirectory = existsSync(path.join(currentProject, "node_modules/@medusajs/cli/cli.js"))
+    ? currentProject
+    : path.join(rootPath, "examples/medusa");
+  const cliPath = path.join(projectDirectory, "node_modules/@medusajs/cli/cli.js");
+  const revoke = spawnSync(process.execPath, [cliPath, "exec", "./src/scripts/revoke-employee.ts"], {
+    cwd: projectDirectory,
+    env: { ...process.env, EMPLOYEE_MEDUSA_USER_ID: staffProfile.data.user.id },
+    stdio: "ignore",
+  });
+  check(!revoke.error && revoke.status === 0, "Employee grant revocation command failed.");
+  const revokedRequest = await api(new LocalHttpBrowser(), "/admin/users/me", "GET", staff.completed.data.token);
+  check(revokedRequest.status === 401 || revokedRequest.status === 403, "An employee JWT remained valid after its grant was revoked.");
+  console.log("PASS the operator revocation command immediately denies the copied employee JWT on the next Admin request.");
   check(clients.ENCVOY_CUSTOMER_CLIENT_ID && clients.ENCVOY_USER_CLIENT_ID, "Registered client settings are incomplete.");
   console.log("Real Encvoy HTTP acceptance completed. This does not claim Safari interaction coverage.");
 }
