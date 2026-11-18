@@ -1,10 +1,12 @@
 # План завершения Envoy ID × Medusa
 
-Обновлено: 16 ноября 2026 года. Это сводка по приложенной редакции задания и последним подтверждённым проверкам.
+Обновлено: 18 ноября 2026 года. Это сводка по приложенной редакции задания и последним подтверждённым проверкам.
 
 Обозначения: `[x]` готово, `[ ]` осталось, `[~]` ограничение или решение по объёму.
 
-**Текущий остаток:** проверки локального архива D завершены в чистом Medusa 2.22.2 consumer: HTTP acceptance прошёл, Chrome и Safari проверены на покупательском и сотрудническом потоках. Публичная npm-версия пока не находится (`npm view` → 404), а `npm whoami` сообщает ENEEDAUTH; установка опубликованной версии останется после публикации и авторизации.
+В комплект передачи включён пакет 0.1.0 с SHA-256 `6fa1ecd562d0f560d5cf9e9d8c601a72bdd2fc58bb8e7b94bdc9bf20fe33b20b`. После браузерной проверки изменился только README внутри пакета. Чистая установка по приложенному lock-файлу, проверка типов и сборка сервера и админки прошли на Node.js 22.23.5.
+
+**Текущий остаток:** на архиве F прошли HTTP acceptance и сотруднический вход/выход в Chrome и Safari. 18 ноября GitHub отозвал предупреждение Picomatch. Повторные проверки через реестр npm дали ноль замечаний по всем зависимостям и отдельно по рабочим зависимостям. Nginx-проверки прошли на временном локальном proxy, но целевой стенд недоступен для проверки. Пакет не опубликован, поэтому проверка установки опубликованной версии остаётся после публикации.
 
 ## Уже готово
 
@@ -46,9 +48,9 @@
 - [x] Provider и example typecheck, сборка provider, production build Medusa 2.22.2 прошли после чистой установки.
 - [x] Беззаписочный HTTP smoke: 20 параллельных GET-запросов к Medusa `/demo` и Encvoy discovery; все ответы 200. Это небольшой burst-check, не нагрузочный предел.
 - [x] `/demo` и `/demo/profile` получают `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`; неавторизованный `/encvoy/profile` возвращает 401.
-- [x] Admin Vite GET/HEAD responses `/app/login` отдают CSP `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff` и `Referrer-Policy: no-referrer`; для production Admin добавлен nginx snippet, но реальный deployment proxy не проверялся.
+- [x] Admin Vite GET/HEAD responses `/app/login` отдают CSP `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff` и `Referrer-Policy: no-referrer`. Production Nginx snippets для security headers, rate limits и безопасных access logs проверены на временном proxy; фактический deployment proxy не настраивался.
 - [x] Storefront и Admin browser fetch используют 10-секундный deadline; тесты подтверждают подключение `AbortSignal` и Admin header middleware.
-- [x] Customer и employee JWT refresh закрыт с `reauthentication_required`; customer JWT напрямую устанавливает native session только один раз. В примере session cookie, оба JWT и employee grant имеют срок 30 минут. Customer logout уничтожает native session и cookie, но скопированный customer bearer JWT остаётся пригоден для разрешённых ему API до `exp` (не более 30 минут после выдачи). Admin logout очищает только локальное JWT-хранилище; скопированный employee JWT также действует до expiry, пока активен grant. Ни один logout не завершает Encvoy SSO; новый вход может пройти без пароля, если SSO-сессия ещё активна. Её TTL задаёт Encvoy.
+- [x] Customer и employee JWT refresh закрыт с `reauthentication_required`; customer JWT напрямую устанавливает native session только один раз. В примере session cookie и employee grant имеют срок 30 минут. Customer logout уничтожает native session и cookie, но скопированный customer bearer JWT остаётся пригоден для разрешённых ему API до `exp` (не более 30 минут после выдачи). Admin работает в session-режиме: logout отзывает конкретный employee grant и уничтожает серверную сессию; скопированный JWT этой сессии после этого отклоняется. Если хранилище grant недоступно, выход возвращает ошибку и сессия не считается завершённой. Ни один logout не завершает Encvoy SSO; новый вход может пройти без пароля, если SSO-сессия ещё активна. Её TTL задаёт Encvoy.
 - [x] Блокировка сотрудника в Encvoy сама по себе не отзывает уже выданную Medusa JWT/grant. Для немедленного offboarding сначала блокируют Encvoy identity, затем запускают `examples/medusa/src/scripts/revoke-employee.ts` с проверенным Medusa user ID. Общий PostgreSQL registry проверяется на каждом защищённом Admin API запросе без positive cache; после revoke следующий такой запрос со старым JWT получает отказ. Команда не завершает Encvoy SSO и не удаляет identity binding. Немедленный отзыв customer JWT в проекте не реализован.
 - [x] Ручная проверка 16.11.2026: после отзыва одной активной записи пользователь прислал скриншот Chrome с экраном `/app/login`; read-only проверка подтвердила, что у тестового пользователя нет активных grants. Повторный вход не выполнялся, чтобы не создать новую grant-запись.
 - [x] Workspace обновлён до Medusa 2.22.2; full live HTTP acceptance прошёл 02.11.2026. Клиентские Chrome/Safari сценарии подтверждены пользователем 03.11.2026; вход сотрудника и logout из Admin прошли в Chrome 156.0.8078.80 и Safari 18.6.
@@ -69,12 +71,15 @@
 - [x] Ранее выполненные Chrome archive C и Safari archive A сценарии оставлены как дополнительная историческая evidence.
 - Дополнительные браузеры: Firefox, Opera и Yandex Browser прошли указанные в журнале сценарии 03.11.2026; Edge на машине не установлен. Они не входят в Chrome/Safari-матрицу приложенного PDF.
 - [x] Отмена входа через `access_denied` и сообщение о недоступности Encvoy (`provider_unavailable`) проверены в Chrome и Safari; отдельной кнопки отмены на Encvoy UI нет.
-- [x] README, `AGENTS.md`, `llms.txt`, статья и журнал сверены с результатами archive D: Chrome/Safari и чистая сборка/typecheck завершены; устаревшие статусы «ожидается браузерная проверка» удалены или помечены как исторические. Статья дополнена практическим подключением и ссылками на итоговые материалы.
+- [x] README, `AGENTS.md`, `llms.txt`, статья и журнал синхронизированы с результатами archive F и чистого consumer. Chrome/Safari результаты archive D помечены как исторические; Chrome/Safari F пройдены. Локальный Encvoy Nginx проверен; production Nginx Medusa в стенде не развёрнут.
 
 ### 3. Проверить чистую установку зависимостей
 
 - [x] Final archive D SHA-1 `dfbffc858341a000f676acecdcfaf61ce373ae35` прошёл независимую чистую установку, `npm ci`, audits, `npm ls`, typecheck, production Backend/Admin build и полный HTTP acceptance на Encvoy 3.6.19 под Node.js 22.23.5. Проверено, что незавершённый customer identity не создаёт Medusa session; операторская CLI-команда отзыва сотрудника приводит к отказу следующего запроса с прежним JWT.
 - [x] Safari 18.6 на runtime-архиве, чистом Medusa 2.22.2 и synthetic `.invalid` fixture: покупатель вошёл, открыл профиль и вышел; сотрудник вошёл в Admin, открыл Orders, вышел из меню, повторное открытие `/app/orders` вернуло на `/app/login` (13.11.2026). Запуск выполнен на настроенном origin `http://localhost:9000`; пароль в Safari не сохранялся.
+- [x] Следующий security follow-up: Admin middleware сначала проверяет `user`-контекст; HTTP acceptance подтверждает отказ отозванному employee JWT даже при customer cookie. Admin работает в session mode; `DELETE /auth/session` отзывает grant и завершает серверную сессию. Полный workspace suite прошёл 46/46; typecheck и clean-consumer production build прошли.
+- [x] Archive F (`c62d6d4d6f672fbbc3fe8f5a8c333375262140e1`, 16 948 байт) повторно собран после обновления README и независимо установлен из точного tarball в чистый Medusa 2.22.2 consumer; `npm ci` установил 1 088 пакетов, `npm ls`, typecheck и production build прошли. Исходники и исполняемый код плагина не менялись. В Chrome и Safari проверены вход сотрудника, Orders, выход и возврат на `/app/login` при повторном открытии Orders.
+- [~] Production Admin `/app/login` не получает security headers при прямой подаче Medusa; Nginx snippets прошли временную proxy-проверку, но actual deployment proxy не запускался и не проверялся.
 
 ### 4. Подготовить и выполнить публикацию
 
@@ -108,3 +113,8 @@
 ## Текущий локальный запуск
 
 Проверочный Medusa-проект запускался из `/tmp/encvoy-package-Q5Tqzh/final-install`, с временной PostgreSQL-базой `medusa_clean_final` и временным Redis на `127.0.0.1:56380`; Encvoy использовал локальный стенд `localhost:9090`. После перезапуска компьютера проверь, что эти временные процессы ещё работают, прежде чем использовать `localhost:9000`.
+
+- [x] Archive F: в Chrome 157.0.8103.51 проверены вход сотрудника, Orders, выход и возврат на `/app/login` при повторном открытии Orders (18.11.2026, чистый consumer).
+- [x] Полный сотруднический вход/выход на F прошёл в Safari 18.6: Encvoy login, Admin Orders, logout, повторное открытие Orders вернуло на `/app/login`.
+- [x] На временном Nginx proxy изолированного consumer прошли `nginx -t`, security headers, безопасный access log без callback query и rate limit (из 30 синтетических POST 19 получили 429, 11 — ожидаемый upstream 403 из-за отсутствующего допустимого Origin).
+- [x] Nginx фактического локального Encvoy front-контейнера прошёл `nginx -t`; Safari OIDC flow использовал этот Nginx. Medusa headers/rate-limit/access-log snippets прошли на тестовом proxy. Production Medusa Nginx в этом стенде не развёрнут.

@@ -6,6 +6,7 @@ export { EncvoyAuthProvider } from "./services/encvoy-auth.js"
 export { EncvoyStateStore } from "./store.js"
 export type { EncvoyLoginState } from "./store.js"
 export { entityId } from "./services/encvoy-auth.js"
+export { defaultBrowserCookieName } from "./options.js"
 export type {
   EncvoyActorType,
   EncvoyAuthProviderOptions,

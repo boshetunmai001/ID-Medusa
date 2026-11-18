@@ -90,6 +90,7 @@ let advertisedIssuer: string | undefined
 let advertisedAlgorithms: string[] = ["RS256"]
 let advertisedPkceMethods: string[] = ["S256"]
 let advertisedAuthMethods: string[] = ["client_secret_basic"]
+let discoveryRequests = 0
 let server: Server
 let issuer = ""
 
@@ -97,6 +98,7 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
   const listening = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", issuer)
     if (request.method === "GET" && url.pathname === "/.well-known/openid-configuration") {
+      discoveryRequests++
       response.writeHead(200, { "content-type": "application/json" })
       response.end(JSON.stringify({
         issuer: advertisedIssuer ?? issuer,
@@ -252,6 +254,7 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
       email_verified: true,
       name: "Encvoy Person",
     })
+    assert.equal(discoveryRequests, 1, "login start and callback must share cached discovery metadata")
   })
 
   await t.test("repeat customer login reuses the configured provider instance identity", async () => {
@@ -296,6 +299,35 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
     assert.equal(typeof loginIds[0], "string")
     assert.notEqual(loginIds[0], loginIds[1])
     assert.equal(identity?.app_metadata?.encvoy_login_id, undefined)
+    assert.equal(discoveryRequests, 1, "repeat logins must reuse discovery metadata within the TTL")
+  })
+
+  await t.test("coalesces concurrent discovery and refreshes metadata after five minutes", async () => {
+    const concurrentProvider = new EncvoyAuthProvider({}, options)
+    const beforeConcurrent = discoveryRequests
+    const concurrentStarts = await Promise.all([
+      concurrentProvider.authenticate(startInput, {} as never),
+      concurrentProvider.authenticate(startInput, {} as never),
+    ])
+    assert.equal(concurrentStarts.every((result) => result.success), true)
+    assert.equal(discoveryRequests - beforeConcurrent, 1,
+      "simultaneous login starts must share one in-flight discovery request")
+
+    const ttlProvider = new EncvoyAuthProvider({}, options)
+    const actualNow = Date.now
+    let fakeNow = 1_000_000
+    Date.now = () => fakeNow
+    try {
+      const beforeTtl = discoveryRequests
+      assert.equal((await ttlProvider.authenticate(startInput, {} as never)).success, true)
+      assert.equal((await ttlProvider.authenticate(startInput, {} as never)).success, true)
+      assert.equal(discoveryRequests - beforeTtl, 1, "cached metadata must be reused before expiry")
+      fakeNow += 5 * 60 * 1000 + 1
+      assert.equal((await ttlProvider.authenticate(startInput, {} as never)).success, true)
+      assert.equal(discoveryRequests - beforeTtl, 2, "expired metadata must be rediscovered")
+    } finally {
+      Date.now = actualNow
+    }
   })
 
   for (const invalidMode of [
@@ -309,11 +341,12 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
   ] as const) {
     await t.test(`rejects invalid ${invalidMode} in ID token`, async () => {
       mode = invalidMode
-      const started = await provider.authenticate(startInput, {} as never)
+      const metadataProvider = new EncvoyAuthProvider({}, options)
+      const started = await metadataProvider.authenticate(startInput, {} as never)
       assert.equal(started.success, true)
       authorizationEndpoint = started.location!
       const state = new URL(started.location!).searchParams.get("state")!
-      const result = await provider.validateCallback({
+      const result = await metadataProvider.validateCallback({
         url: "/auth/customer/encvoy-customer/callback",
         headers: startInput.headers,
         query: { code: "mock-code", state },
@@ -445,7 +478,8 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
     try {
       for (const alterMetadata of cases) {
         alterMetadata()
-        const result = await provider.authenticate(startInput, {} as never)
+        const metadataProvider = new EncvoyAuthProvider({}, options)
+        const result = await metadataProvider.authenticate(startInput, {} as never)
         assert.equal(result.success, false)
         assert.equal(result.error, "invalid_response")
         advertisedIssuer = undefined
@@ -552,7 +586,8 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
 
   await t.test("unavailable discovery fails safely without returning a redirect or upstream details", async () => {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
-    const result = await provider.authenticate(startInput, {} as never)
+    const unavailableProvider = new EncvoyAuthProvider({}, options)
+    const result = await unavailableProvider.authenticate(startInput, {} as never)
     assert.deepEqual(result, { success: false, error: "provider_unavailable" })
   })
 

@@ -21,6 +21,16 @@ export type ValidatedEncvoyAuthProviderOptions = EncvoyAuthProviderOptions & {
   employeeGrantLifetimeSeconds: number
 }
 
+export function defaultBrowserCookieName(
+  actorType: EncvoyActorType,
+  secure: boolean,
+): string {
+  const base = actorType === "customer"
+    ? "encvoy_customer_browser"
+    : "encvoy_user_browser"
+  return secure ? `__Secure-${base}` : base
+}
+
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"])
 const COOKIE_TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
 
@@ -80,12 +90,15 @@ export function validateOptions(
     throw new Error("issuer, callbackUrl, and browserOrigin must use HTTPS")
   }
 
-  const cookieName = options.cookieName ??
-    (options.actorType === "customer"
-      ? "encvoy_customer_browser"
-      : "encvoy_user_browser")
+  const cookieName = options.cookieName ?? defaultBrowserCookieName(
+    options.actorType,
+    !options.allowInsecureLocalhost,
+  )
   if (typeof cookieName !== "string" || !COOKIE_TOKEN.test(cookieName)) {
     throw new Error("cookieName must be a valid cookie token")
+  }
+  if (!options.allowInsecureLocalhost && !cookieName.startsWith("__Secure-")) {
+    throw new Error("cookieName must use the __Secure- prefix over HTTPS")
   }
 
   const employeeGrantLifetimeSeconds = options.employeeGrantLifetimeSeconds ?? 30 * 60

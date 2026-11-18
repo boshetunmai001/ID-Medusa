@@ -1,6 +1,5 @@
 import { defineConfig, loadEnv } from "@medusajs/framework/utils";
 import { logger } from "@medusajs/framework/logger";
-const { adminSecurityHeadersPlugin } = require("./src/admin/lib/security-headers.ts");
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd());
 
@@ -11,6 +10,11 @@ function required(name: string): string {
 }
 
 const origin = required("MEDUSA_BROWSER_ORIGIN");
+const admin = { backendUrl: origin } as Record<string, unknown>;
+if (process.env.NODE_ENV === "development") {
+  const { adminSecurityHeadersPlugin } = require("./src/admin/lib/security-headers.ts");
+  admin.vite = () => ({ plugins: [adminSecurityHeadersPlugin] });
+}
 const employeeJwtLifetimeSeconds = 30 * 60;
 const localHttp = process.env.ENCVOY_ALLOW_INSECURE_LOCALHOST === "true";
 if (localHttp && (process.env.NODE_ENV === "production" || !["localhost", "127.0.0.1"].includes(new URL(origin).hostname))) {
@@ -56,9 +60,6 @@ module.exports = defineConfig({
       authMethodsPerActor: { customer: ["encvoy-customer"], user: ["encvoy-user"] },
     },
   },
-  admin: {
-    backendUrl: origin,
-    vite: () => ({ plugins: [adminSecurityHeadersPlugin] }),
-  },
+  admin,
   modules: [{ resolve: "@medusajs/medusa/auth", options: { providers: [provider("customer"), provider("user")] } }],
 });

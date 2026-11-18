@@ -1,12 +1,17 @@
 import type { MedusaContainer } from "@medusajs/framework/types";
 import { MedusaError, Modules } from "@medusajs/framework/utils";
 import { createCustomerAccountWorkflow } from "@medusajs/medusa/core-flows";
+import type { EncvoyStateStore } from "medusa-plugin-encvoy-id";
 import { stateStore } from "./state-store";
 
-export async function completeCustomer(container: MedusaContainer, authIdentityId: string) {
+export async function completeCustomer(
+  container: MedusaContainer,
+  authIdentityId: string,
+  store: Pick<EncvoyStateStore, "withLock"> = stateStore(),
+) {
   const auth = container.resolve(Modules.AUTH);
   const customers = container.resolve(Modules.CUSTOMER);
-  return stateStore().withLock(`customer-identity:${authIdentityId}`, async () => {
+  return store.withLock(`customer-identity:${authIdentityId}`, async () => {
     const identity = await auth.retrieveAuthIdentity(authIdentityId, { relations: ["provider_identities"] });
     const provider = identity.provider_identities?.find((entry) => entry.provider === "encvoy-customer");
     if (!provider || identity.app_metadata?.user_id || provider.provider_metadata?.actor_type !== "customer") {
@@ -23,7 +28,7 @@ export async function completeCustomer(container: MedusaContainer, authIdentityI
     if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+$/.test(email)) {
       throw new MedusaError(MedusaError.Types.INVALID_DATA, "invalid_email");
     }
-    return stateStore().withLock(`customer-email:${email}`, async () => {
+    return store.withLock(`customer-email:${email}`, async () => {
       const escapedEmail = email.replace(/[\\%_]/g, "\\$&");
       const existing = await customers.listCustomers({ email: { $ilike: escapedEmail } }, { take: 1 });
       if (existing.length) {

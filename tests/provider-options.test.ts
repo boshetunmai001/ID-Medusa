@@ -21,6 +21,13 @@ test("provider options require local hosts and non-production for insecure HTTP"
   process.env.NODE_ENV = "test"
   try {
     assert.equal(validateOptions(localOptions).cookieName, "encvoy_customer_browser")
+    assert.equal(validateOptions({
+      ...localOptions,
+      issuer: "https://issuer.test",
+      callbackUrl: "https://medusa.test/auth/customer/encvoy-customer/callback",
+      browserOrigin: "https://medusa.test",
+      allowInsecureLocalhost: false,
+    }).cookieName, "__Secure-encvoy_customer_browser")
     assert.throws(
       () => validateOptions({ ...localOptions, browserOrigin: "http://localhost.attacker.test" }),
       /literal localhost URLs/,
@@ -33,6 +40,16 @@ test("provider options require local hosts and non-production for insecure HTTP"
       () => validateOptions({ ...localOptions, callbackUrl: "https://example.test/callback" }),
       /literal localhost URLs/,
     )
+    assert.throws(() => validateOptions({
+      issuer: "https://issuer.test",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      callbackUrl: "https://medusa.test/auth/customer/encvoy-customer/callback",
+      actorType: "customer",
+      databaseUrl: "postgres://localhost/test",
+      browserOrigin: "https://medusa.test",
+      cookieName: "encvoy_customer_browser",
+    }), /__Secure- prefix/)
 
     process.env.NODE_ENV = "production"
     assert.throws(() => validateOptions(localOptions), /not allowed in production/)

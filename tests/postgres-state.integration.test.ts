@@ -124,8 +124,14 @@ test("employee grants bind to one user and are immediately revocable", {
 
     assert.equal(await store.isEmployeeGrantActive(loginIds[0], userId), true)
     assert.equal(await store.isEmployeeGrantActive(loginIds[0], otherUserId), false)
-    assert.equal(await store.revokeEmployeeGrants(userId), 2)
+    assert.equal(await store.revokeEmployeeGrant(loginIds[0], userId), true)
     assert.equal(await store.isEmployeeGrantActive(loginIds[0], userId), false)
+    assert.equal(await store.isEmployeeGrantActive(loginIds[1], userId), true)
+    assert.equal(await store.revokeEmployeeGrant(loginIds[0], userId), false,
+      "revoking the same browser grant twice must be idempotent")
+    assert.equal(await store.revokeEmployeeGrant(loginIds[2], userId), false,
+      "a grant for another employee must not be revoked")
+    assert.equal(await store.revokeEmployeeGrants(userId), 1)
     assert.equal(await store.isEmployeeGrantActive(loginIds[1], userId), false)
     assert.equal(await store.isEmployeeGrantActive(loginIds[2], otherUserId), true)
   } finally {

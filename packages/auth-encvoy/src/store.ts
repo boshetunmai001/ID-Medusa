@@ -205,6 +205,18 @@ export class EncvoyStateStore {
     return result.rows.length === 1
   }
 
+  /** Revoke exactly one browser login grant, including any copied bearer JWT. */
+  async revokeEmployeeGrant(loginId: string, userId: string): Promise<boolean> {
+    if (!loginId || !userId) throw new Error("loginId and userId are required")
+    const result = await this.pool.query(
+      `UPDATE encvoy_employee_session_grant SET revoked_at = now()
+       WHERE login_id = $1 AND user_id = $2 AND revoked_at IS NULL AND expires_at > now()
+       RETURNING login_id`,
+      [loginId, userId],
+    )
+    return result.rowCount === 1
+  }
+
   /** Revoke all currently active grants for one explicitly identified Medusa user. */
   async revokeEmployeeGrants(userId: string): Promise<number> {
     if (!userId) throw new Error("userId is required")

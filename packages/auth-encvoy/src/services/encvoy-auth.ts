@@ -22,7 +22,6 @@ import { EncvoyStateStore } from "../store.js"
 type InjectedDependencies = { logger?: Logger }
 type RuntimeAuthInput = AuthenticationInput & {
   actor_type?: string
-  method?: string
 }
 
 type VerifiedClaims = {
@@ -43,6 +42,7 @@ const NOT_AUTHORIZED = "not_authorized"
 const IDENTITY_CONFLICT = "identity_conflict"
 const CANCELLATION = "cancellation"
 const LOCAL_OIDC_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"])
+const DISCOVERY_CACHE_TTL_MS = 5 * 60 * 1000
 
 export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
   static identifier = "encvoy"
@@ -51,6 +51,11 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
   protected readonly config_: ValidatedEncvoyAuthProviderOptions
   protected readonly logger_?: Logger
   private readonly stateStore_: EncvoyStateStore
+  private discoveryCache?: {
+    configuration: oidc.Configuration
+    expiresAt: number
+  }
+  private discoveryInFlight?: Promise<oidc.Configuration>
 
   static validateOptions(options: EncvoyAuthProviderOptions): void {
     validateOptions(options)
@@ -128,9 +133,6 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
   ): Promise<AuthenticationResponse> {
     const request = input as RuntimeAuthInput
     if (!this.routeMatches(request, true)) {
-      return failure(INVALID_RESPONSE)
-    }
-    if (request.method && request.method.toUpperCase() !== "POST") {
       return failure(INVALID_RESPONSE)
     }
     if (!this.hasExpectedOrigin(request)) {
@@ -258,6 +260,31 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
   }
 
   private async discover(): Promise<oidc.Configuration> {
+    const cached = this.discoveryCache
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.configuration
+    }
+    if (this.discoveryInFlight) {
+      return this.discoveryInFlight
+    }
+
+    const inFlight = this.loadConfiguration()
+    this.discoveryInFlight = inFlight
+    try {
+      const configuration = await inFlight
+      this.discoveryCache = {
+        configuration,
+        expiresAt: Date.now() + DISCOVERY_CACHE_TTL_MS,
+      }
+      return configuration
+    } finally {
+      if (this.discoveryInFlight === inFlight) {
+        this.discoveryInFlight = undefined
+      }
+    }
+  }
+
+  private async loadConfiguration(): Promise<oidc.Configuration> {
     let configuration: oidc.Configuration
     try {
       configuration = await oidc.discovery(

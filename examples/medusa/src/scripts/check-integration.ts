@@ -37,6 +37,7 @@ export default async function checkIntegration({ container }: ExecArgs): Promise
   const userIds: string[] = [];
   const apiKeyIds: string[] = [];
   let sessionCookie: string | undefined;
+  let employeeSessionCookie: string | undefined;
   let publishableApiKey: string | undefined;
 
   async function createIdentity(
@@ -86,6 +87,7 @@ export default async function checkIntegration({ container }: ExecArgs): Promise
     actorId: string,
     authIdentityId: string,
     provider: string,
+    appMetadata: Record<string, unknown> = {},
   ): Promise<string> {
     const http = (config as { projectConfig: { http: { jwtSecret: string; jwtExpiresIn?: string } } }).projectConfig.http;
     return generateJwtToken({
@@ -95,7 +97,7 @@ export default async function checkIntegration({ container }: ExecArgs): Promise
       auth_provider: provider,
       mfa_enabled: false,
       mfa_challenge_completed_at: null,
-      app_metadata: { [`${actorType}_id`]: actorId },
+      app_metadata: { [`${actorType}_id`]: actorId, ...appMetadata },
       user_metadata: {},
     }, { secret: http.jwtSecret, expiresIn: "5m" });
   }
@@ -129,6 +131,14 @@ export default async function checkIntegration({ container }: ExecArgs): Promise
 
     assert.equal((await request("/store/customers/me")).status, 401, "anonymous customer profile must be denied");
     assert.equal((await request("/admin/users/me")).status, 401, "anonymous admin profile must be denied");
+
+    const adminLoginPage = await request("/app/login");
+    assert.equal(adminLoginPage.status, 200, "the Admin login page must be served");
+    assert.equal(adminLoginPage.headers.get("content-security-policy"), "frame-ancestors 'none'",
+      "the Medusa backend must prevent the Admin app from being framed");
+    assert.equal(adminLoginPage.headers.get("x-frame-options"), "DENY");
+    assert.equal(adminLoginPage.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(adminLoginPage.headers.get("referrer-policy"), "no-referrer");
 
     const browserProof = randomBytes(32).toString("base64url");
     const authStart = await request("/auth/customer/encvoy-customer", {
@@ -218,6 +228,10 @@ export default async function checkIntegration({ container }: ExecArgs): Promise
       employeeEmail,
       { user_id: employee.id },
     );
+    const grants = stateStore();
+    await grants.initialize();
+    const activeLoginId = `integration-active-${suffix}`;
+    await grants.createEmployeeGrant(activeLoginId, employee.id, 300);
     const storedEmployeeIdentity = await auth.retrieveAuthIdentity(employeeIdentity.id, {
       relations: ["provider_identities"],
     });
@@ -242,13 +256,38 @@ export default async function checkIntegration({ container }: ExecArgs): Promise
       headers: { authorization: `Bearer ${customerToken}` },
     })).status, 401, "a customer token must not access the admin API");
 
-    const employeeToken = await createToken("user", employee.id, employeeIdentity.id, "encvoy-user");
+    const employeeToken = await createToken("user", employee.id, employeeIdentity.id, "encvoy-user", {
+      encvoy_login_id: activeLoginId,
+    });
     assert.equal((await request("/admin/users/me", {
       headers: { authorization: `Bearer ${employeeToken}` },
     })).status, 200, "a pre-bound employee's native Medusa token must access the admin API");
     assert.equal((await request("/store/customers/me", {
       headers: { authorization: `Bearer ${employeeToken}` },
     })).status, 401, "an admin user token must not access the customer API");
+
+    const establishEmployeeSession = await request("/auth/session", {
+      method: "POST",
+      headers: { authorization: `Bearer ${employeeToken}`, origin: browserOrigin },
+    });
+    assert.equal(establishEmployeeSession.status, 200,
+      "Medusa must convert the employee bearer token into an Admin browser session");
+    const employeeSetCookie = establishEmployeeSession.headers.get("set-cookie");
+    assert.ok(employeeSetCookie, "employee session establishment must return a session cookie");
+    employeeSessionCookie = employeeSetCookie.split(";", 1)[0];
+    assert.equal((await request("/admin/users/me", { headers: { cookie: employeeSessionCookie } })).status, 200,
+      "the employee browser session must authorize Admin routes");
+    const employeeLogout = await request("/auth/session", {
+      method: "DELETE",
+      headers: { cookie: employeeSessionCookie, origin: browserOrigin },
+    });
+    assert.equal(employeeLogout.status, 200, "employee logout must destroy its Medusa session");
+    assert.equal(await grants.isEmployeeGrantActive(activeLoginId, employee.id), false,
+      "employee logout must revoke the server-side grant associated with that browser session");
+    assert.equal((await request("/admin/users/me", {
+      headers: { authorization: `Bearer ${employeeToken}` },
+    })).status, 401, "the copied employee JWT must stop working after browser logout");
+    employeeSessionCookie = undefined;
 
     const establishSession = await request("/auth/session", {
       method: "POST",
@@ -265,6 +304,24 @@ export default async function checkIntegration({ container }: ExecArgs): Promise
       "the native customer session must authorize customer routes");
     assert.equal((await request("/admin/users/me", { headers: { cookie: sessionCookie } })).status, 401,
       "the customer session must not authorize admin routes");
+
+    const revokedLoginId = `integration-revoked-${suffix}`;
+    await grants.createEmployeeGrant(revokedLoginId, employee.id, 300);
+    assert.equal(await grants.revokeEmployeeGrants(employee.id), 1,
+      "the remaining active employee grant must be revoked before checking the copied JWT");
+    const revokedEmployeeToken = await createToken(
+      "user", employee.id, employeeIdentity.id, "encvoy-user", { encvoy_login_id: revokedLoginId },
+    );
+    const revokedWithCustomerCookie = await request("/admin/users/me", {
+      headers: { authorization: `Bearer ${revokedEmployeeToken}`, cookie: sessionCookie },
+    });
+    assert.equal(revokedWithCustomerCookie.status, 401,
+      "a customer session must not bypass revocation of the supplied employee JWT");
+    const revokedWithoutCustomerCookie = await request("/admin/users/me", {
+      headers: { authorization: `Bearer ${revokedEmployeeToken}` },
+    });
+    assert.equal(revokedWithoutCustomerCookie.status, 401,
+      "the revoked employee JWT must be rejected without a customer session too");
     const blockedLogout = await request("/auth/session", {
       method: "DELETE",
       headers: { cookie: sessionCookie, origin: `${browserOrigin}.invalid` },
@@ -318,7 +375,7 @@ export default async function checkIntegration({ container }: ExecArgs): Promise
       "the destroyed session must no longer authorize customer routes");
     sessionCookie = undefined;
 
-    console.log("Medusa integration passed: concurrent customer provisioning, collision refusal, actor isolation, employee binding, browser-cookie renewal, account switching, HTTP protections, and local logout.");
+    console.log("Medusa integration passed: concurrent customer provisioning, collision refusal, actor isolation, employee grant revocation on logout, revoked-token denial (including a customer cookie with a revoked employee JWT), browser-cookie renewal, account switching, HTTP protections, and local logout.");
   } catch (error) {
     integrationFailure = error;
   } finally {
@@ -326,6 +383,12 @@ export default async function checkIntegration({ container }: ExecArgs): Promise
       await request("/auth/session", {
         method: "DELETE",
         headers: { cookie: sessionCookie, origin: browserOrigin },
+      }).catch(() => undefined);
+    }
+    if (employeeSessionCookie) {
+      await request("/auth/session", {
+        method: "DELETE",
+        headers: { cookie: employeeSessionCookie, origin: browserOrigin },
       }).catch(() => undefined);
     }
     const cleanup = async (action: () => Promise<unknown>) => {

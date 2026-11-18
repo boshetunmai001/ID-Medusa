@@ -1,9 +1,9 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk";
 import Medusa from "@medusajs/js-sdk";
 import { useEffect, useState } from "react";
-import { postEncvoyUserAuth } from "../lib/encvoy-browser-auth";
+import { establishEncvoyAdminSession, postEncvoyUserAuth } from "../lib/encvoy-browser-auth";
 
-const sdk = new Medusa({ baseUrl: "/", debug: false, auth: { type: "jwt" } });
+const sdk = new Medusa({ baseUrl: "/", debug: false, auth: { type: "session" } });
 let callbackPromise: Promise<void> | undefined;
 
 async function finishCallback(params: URLSearchParams): Promise<void> {
@@ -14,8 +14,10 @@ async function finishCallback(params: URLSearchParams): Promise<void> {
   }
   const result = await postEncvoyUserAuth<{ token?: string; mfa_required?: boolean; verification_required?: boolean }>("/auth/user/encvoy-user/callback", body);
   if (typeof result.token !== "string" || result.mfa_required || result.verification_required) throw new Error("Sign-in requires additional verification.");
-  // Use Medusa's SDK storage contract; the token is issued by Medusa.
-  await sdk.client.setToken(result.token);
+  // Exchange the callback JWT for an HttpOnly Medusa session. Client.setToken()
+  // would only put the JWT in local storage and would not create a session.
+  await establishEncvoyAdminSession(result.token);
+  await sdk.client.clearToken();
   try {
     await sdk.admin.user.me();
   } catch {

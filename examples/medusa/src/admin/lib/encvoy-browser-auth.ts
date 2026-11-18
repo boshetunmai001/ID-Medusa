@@ -17,3 +17,19 @@ export async function postEncvoyUserAuth<T>(path: UserAuthPath, body: Record<str
     throw new Error("Encvoy sign-in request failed.");
   }
 }
+
+export async function establishEncvoyAdminSession(token: string): Promise<void> {
+  try {
+    const response = await fetch("/auth/session", {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+      headers: { accept: "application/json", authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) throw new Error();
+    await response.json();
+  } catch {
+    throw new Error("Encvoy sign-in request failed.");
+  }
+}

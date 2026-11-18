@@ -1,6 +1,8 @@
 # Project status
 
-Updated: 2026-11-16.
+The handoff contains medusa-plugin-encvoy-id 0.1.0 (SHA-256 `6fa1ecd562d0f560d5cf9e9d8c601a72bdd2fc58bb8e7b94bdc9bf20fe33b20b`). Compared file by file with archive F, only the package README changed. In a new independent Medusa 2.22.2 project, Node.js 22.23.5 installed 1,088 packages with npm ci from the supplied consumer lockfile. All installed plugin files matched the tarball. Typecheck and production Backend and Admin builds passed. Full and production-only online npm audits returned zero findings after GitHub withdrew GHSA-fc5q-39xc-vjpf. The Chrome, Safari and HTTP results below refer to archive F.
+
+## Historical checks on 2026-11-16
 
 The current workspace targets Medusa **2.22.2**, Node.js **22.23.5**, vendor Encvoy **3.6.19** images, and PostgreSQL **16.16** for the Encvoy stand. The three-page assignment PDF available with the handoff says ready-made Encvoy images based on **1.2**; the reviewer's note refers to another edition naming **3.6.19**, whose file was not available for comparison. The tested runtime is vendor-distributed 3.6.19 images pinned by digest, not a build of the separate Encvoy 1.2.0 source snapshot and not evidence of 1.2-image compatibility. Final local archive D `dfbffc858341a000f676acecdcfaf61ce373ae35` (14,891 bytes) passed clean-consumer `npm ci`, audit, `npm ls`, typecheck, production build, and full live HTTP acceptance including employee-grant revocation on 2026-11-16. Chrome 157.0.8103.51 and Safari 18.6 on D passed customer login/profile/logout/repeat-login and employee login/Admin Orders/logout. Safari redirected a reopened Orders route to login. Public npm lookup returns 404; authenticated `npm whoami` is unavailable, so published-version install remains pending. This is a local prototype; nothing has been published or deployed; local worktree changes remain.
 
