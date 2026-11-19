@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { authenticate, defineMiddlewares, MedusaNextFunction, MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { Modules } from "@medusajs/framework/utils";
 import { defaultBrowserCookieName, type EncvoyStateStore } from "medusa-plugin-encvoy-id";
-import { requireActiveEncvoyEmployeeGrant, revokeEncvoyEmployeeGrantOnLogout } from "../lib/employee-auth";
+import { requireActiveEncvoyEmployeeGrant, requireEmployeeWriteOrigin, revokeEncvoyEmployeeGrantOnLogout } from "../lib/employee-auth";
 import { stateStore } from "../lib/state-store";
 
 const origin = () => process.env.MEDUSA_BROWSER_ORIGIN!;
@@ -139,7 +139,7 @@ export default defineMiddlewares({
     { matcher: "/auth/token/refresh", methods: ["POST"], middlewares: [browserPost, authenticate("*", "bearer", { allowUnregistered: true, requireMfa: false }), denyEncvoyRefresh] },
     // Resolve a supplied JWT before enforcing employee-grant revocation. Native
     // route authentication still enforces authorization for all other requests.
-    { matcher: /^\/admin(?:\/.*)?$/, middlewares: [authenticate("user", ["session", "bearer", "api-key"], { allowUnauthenticated: true }), requireActiveEncvoyEmployeeGrant] },
+    { matcher: /^\/admin(?:\/.*)?$/, middlewares: [requireEmployeeWriteOrigin, authenticate("user", ["session", "bearer", "api-key"], { allowUnauthenticated: true }), requireActiveEncvoyEmployeeGrant] },
     { matcher: "/encvoy/customer/complete", methods: ["POST"], middlewares: [browserPost, authenticate("customer", "bearer", { allowUnregistered: true })] },
     { matcher: "/encvoy/profile", methods: ["GET"], middlewares: [redirectProfileNavigation, authenticate("customer", "session")] },
     { matcher: /^\/demo(?:\/.*)?$/, middlewares: [headers] },

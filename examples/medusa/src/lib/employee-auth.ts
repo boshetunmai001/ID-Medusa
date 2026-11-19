@@ -64,9 +64,22 @@ export async function revokeEncvoyEmployeeGrantOnLogout(
   }
 }
 
+/** A browser can attach a staff session to writes from a sibling origin. */
+export function requireEmployeeWriteOrigin(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method) || req.session?.auth_context?.actor_type !== "user") {
+    return next();
+  }
+  const origin = process.env.MEDUSA_BROWSER_ORIGIN;
+  if (!origin || req.headers.origin !== origin) {
+    return res.status(403).json({ message: "invalid_origin" });
+  }
+  next();
+}
+
 /** Add to every custom route that accepts an authenticated Medusa user. */
 export function activeEncvoyEmployeeRouteMiddlewares() {
   return [
+    requireEmployeeWriteOrigin,
     authenticate("user", ["session", "bearer", "api-key"]),
     requireActiveEncvoyEmployeeGrant,
   ] as const;

@@ -277,6 +277,19 @@ export default async function checkIntegration({ container }: ExecArgs): Promise
     employeeSessionCookie = employeeSetCookie.split(";", 1)[0];
     assert.equal((await request("/admin/users/me", { headers: { cookie: employeeSessionCookie } })).status, 200,
       "the employee browser session must authorize Admin routes");
+    const profileUpdate = {
+      method: "POST",
+      headers: { cookie: employeeSessionCookie, "content-type": "application/json" },
+      body: JSON.stringify({ first_name: "Synthetic" }),
+    };
+    const employeePath = `/admin/users/${employee.id}`;
+    const missingOrigin = await request(employeePath, profileUpdate);
+    assert.equal(missingOrigin.status, 403, "an employee session write needs the Admin origin");
+    assert.equal((await missingOrigin.json()).message, "invalid_origin");
+    const trustedUpdate = await request(employeePath, {
+      ...profileUpdate, headers: { ...profileUpdate.headers, origin: browserOrigin },
+    });
+    assert.equal(trustedUpdate.status, 200, "the Admin can still update a synthetic profile");
     const employeeLogout = await request("/auth/session", {
       method: "DELETE",
       headers: { cookie: employeeSessionCookie, origin: browserOrigin },

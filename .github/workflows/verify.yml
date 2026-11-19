@@ -1,0 +1,56 @@
+name: Verify Medusa integration
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16.16
+        env:
+          POSTGRES_DB: medusa_synthetic
+          POSTGRES_PASSWORD: disposable-ci
+        ports: ["25432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["26379:6379"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --legacy-peer-deps --no-audit --no-fund
+      - run: npm run build && npm run typecheck
+      - name: Run tests with temporary PostgreSQL
+        run: |
+          if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-16
+          fi
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          npm test
+      - name: Generate local Medusa configuration for disposable services
+        run: |
+          mkdir -p .local
+          cat > .local/infra.env <<'ENV'
+          DATABASE_URL=postgresql://postgres:disposable-ci@127.0.0.1:25432/medusa_synthetic
+          REDIS_URL=redis://127.0.0.1:26379/0
+          ENCVOY_ISSUER=http://localhost:19999
+          ENV
+          for key in JWT_SECRET COOKIE_SECRET; do
+            printf '%s=%s\n' "$key" "$(openssl rand -hex 32)" >> .local/infra.env
+          done
+          node scripts/configure-medusa.mjs
+          grep -qx ADMIN_AUTH_TYPE=session examples/medusa/.env
+      - name: Run Medusa HTTP integration
+        run: |
+          node scripts/medusa.mjs db:migrate
+          node scripts/medusa.mjs develop --port 9000 > "$RUNNER_TEMP/medusa.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          curl --fail --silent --show-error --retry 90 --retry-connrefused --retry-delay 1 --max-time 3 http://127.0.0.1:9000/health
+          RUN_MEDUSA_INTEGRATION=1 node scripts/medusa.mjs exec src/scripts/check-integration.ts

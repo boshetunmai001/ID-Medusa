@@ -1,12 +1,13 @@
 import assert from "node:assert/strict"
 import { randomBytes } from "node:crypto"
 import test from "node:test"
-import { Modules } from "@medusajs/framework/utils"
-import {
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import config, {
   authBrowser,
   consumeEncvoyJwt,
   hydrateCompletedCustomer,
 } from "../examples/medusa/src/api/middlewares.js"
+import { requireActiveEncvoyEmployeeGrant, requireEmployeeWriteOrigin } from "../examples/medusa/src/lib/employee-auth.js"
 
 function mockResponse() {
   const result: {
@@ -181,4 +182,52 @@ test("hydrateCompletedCustomer requires the persisted customer link and hydrates
   assert.equal(authContext.actor_type, "customer")
   assert.equal(authContext.actor_id, "cus_synthetic")
   assert.deepEqual(authContext.app_metadata, { customer_id: "cus_synthetic" })
+})
+
+test("Admin grant middleware receives only staff session identities", async () => {
+  const route = config.routes.find(({ matcher }) => matcher instanceof RegExp && matcher.test("/admin/users/me"))
+  assert.ok(route)
+  const grantIndex = route.middlewares.indexOf(requireActiveEncvoyEmployeeGrant)
+  assert.ok(grantIndex > 0)
+  assert.ok(route.middlewares.slice(0, grantIndex).includes(requireEmployeeWriteOrigin))
+  for (const actor of ["customer", "user"]) {
+    const req = {
+      method: "GET", headers: {}, session: { auth_context: { actor_type: actor, actor_id: "fixture" } },
+      scope: { resolve: (key: string) => key === ContainerRegistrationKeys.CONFIG_MODULE
+        ? { projectConfig: { http: {} } } : {} },
+      auth_context: undefined as { actor_type: string } | undefined,
+    }
+    for (const middleware of route.middlewares.slice(0, grantIndex)) {
+      let advanced = false
+      await middleware(req as never, mockResponse() as never, () => { advanced = true })
+      assert.equal(advanced, true)
+    }
+    assert.equal(req.auth_context?.actor_type, actor === "user" ? "user" : undefined)
+  }
+})
+
+test("Admin cookie writes require an exact Origin and machine requests can omit it", () => {
+  const previous = process.env.MEDUSA_BROWSER_ORIGIN
+  const origin = "https://admin.example.test"
+  process.env.MEDUSA_BROWSER_ORIGIN = origin
+  try {
+    for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+      for (const value of [undefined, "null", "https://store.example.test", origin]) {
+        const res = mockResponse()
+        let passed = false
+        requireEmployeeWriteOrigin({
+          method, session: { auth_context: { actor_type: "user" } }, headers: { origin: value },
+        } as never, res as never, () => { passed = true })
+        assert.equal(passed, value === origin)
+        if (!passed) assert.equal(res.result.statusCode, 403)
+      }
+    }
+    let passed = false
+    requireEmployeeWriteOrigin({ method: "POST", headers: {} } as never,
+      mockResponse() as never, () => { passed = true })
+    assert.equal(passed, true)
+  } finally {
+    if (previous === undefined) delete process.env.MEDUSA_BROWSER_ORIGIN
+    else process.env.MEDUSA_BROWSER_ORIGIN = previous
+  }
 })

@@ -22,7 +22,7 @@ const config = {
   NODE_ENV: "development", HOST: "127.0.0.1", PORT: "9000",
   DATABASE_URL: infrastructure.DATABASE_URL, REDIS_URL: infrastructure.REDIS_URL,
   JWT_SECRET: infrastructure.JWT_SECRET, COOKIE_SECRET: infrastructure.COOKIE_SECRET,
-  MEDUSA_BROWSER_ORIGIN: "http://localhost:9000", ADMIN_AUTH_TYPE: "jwt", MEDUSA_DISABLE_TELEMETRY: "true",
+  MEDUSA_BROWSER_ORIGIN: "http://localhost:9000", ADMIN_AUTH_TYPE: "session", MEDUSA_DISABLE_TELEMETRY: "true",
   ENCVOY_ISSUER: infrastructure.ENCVOY_ISSUER, ENCVOY_ALLOW_INSECURE_LOCALHOST: "true",
   ENCVOY_CUSTOMER_CLIENT_ID: clients.ENCVOY_CUSTOMER_CLIENT_ID || "pending-local-registration",
   ENCVOY_CUSTOMER_CLIENT_SECRET: clients.ENCVOY_CUSTOMER_CLIENT_SECRET || "pending-local-registration",

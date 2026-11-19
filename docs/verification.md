@@ -1,5 +1,11 @@
 # Verification checklist and evidence
 
+## Admin session checks on 2026-11-19
+
+The local configuration generator selected session authentication in a fresh example. The Backend and Admin builds passed, and the generated Admin bundle initialized the Medusa SDK with the session auth type. The provider build, workspace typecheck and 48 automated tests passed on Node.js 22.23.5. The Medusa HTTP integration ran separately on a disposable PostgreSQL 16.16 database and Redis. A staff session could read the Admin profile and update it from the configured origin. A write without Origin returned 403. Employee logout revoked the active grant. The protected Admin endpoint returned 401 for a revoked employee token both with and without a customer session cookie. The integration uses synthetic Medusa identities. The real Encvoy browser runs are dated below.
+
+The GitHub workflow runs the unit suite and the Medusa HTTP check for pushes and pull requests using disposable services. The unit suite also checks that the configured Admin middleware selects a staff session and skips a customer session before the grant check.
+
 The handoff contains medusa-plugin-encvoy-id 0.1.0 (SHA-256 `6fa1ecd562d0f560d5cf9e9d8c601a72bdd2fc58bb8e7b94bdc9bf20fe33b20b`). Compared file by file with archive F, only the package README changed. In a new independent Medusa 2.22.2 project, Node.js 22.23.5 installed 1,088 packages with npm ci from the supplied consumer lockfile. All installed plugin files matched the tarball. Typecheck and production Backend and Admin builds passed. Full and production-only online npm audits returned zero findings after GitHub withdrew GHSA-fc5q-39xc-vjpf. The Chrome, Safari and HTTP results below refer to archive F.
 
 Keep protocol-fixture results separate from Encvoy acceptance. This page records the available local evidence; it does not certify another Encvoy release or a production deployment.
