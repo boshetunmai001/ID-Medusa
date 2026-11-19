@@ -10,7 +10,7 @@ The workspace targets Node.js 22.23.5, Medusa 2.22.2, and `openid-client` 6.8.8.
 
 From the repository root, follow the full, ordered instructions in `README.md` under **Set up the local stand**. In brief:
 
-1. Select Node.js 22.23.5 and install the locked workspace dependencies with `npm ci --legacy-peer-deps --no-audit --no-fund`.
+1. Select Node.js 22.23.5 and install the locked workspace dependencies with `npm ci --no-audit --no-fund`.
 2. Create local environment files with `node scripts/init-local.mjs` and `node scripts/encvoy-image-env.mjs`.
 3. Start the loopback Medusa PostgreSQL/Redis services and prepare the pinned Encvoy image stand using `docs/encvoy-image.md`.
 4. Provision the local synthetic clients, configure Medusa from `.local/encvoy-image-clients.env`, and start the API as documented in `README.md`.

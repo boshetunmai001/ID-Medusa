@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
-import path from "node:path";
 import { LocalCheckError, LocalHttpBrowser, requireCheck as check } from "./lib/local-http-browser.mjs";
+import { resolveMedusaProject } from "./lib/medusa-project.mjs";
 
 const medusa = "http://localhost:9000";
 const issuer = "http://localhost:9090";
@@ -14,6 +14,7 @@ let stage = "load-private-fixtures";
 
 async function main() {
   if (process.env.RUN_ENCVOY_ACCEPTANCE !== "1") throw new Error("Set RUN_ENCVOY_ACCEPTANCE=1 for the isolated local stand.");
+  const { projectDirectory, cliPath } = resolveMedusaProject({ cwd: process.cwd(), workspaceRoot: rootPath });
   const fixtures = parseEnv(await readFile(new URL(".local/encvoy-image-fixtures.env", root), "utf8"));
   const clients = parseEnv(await readFile(new URL(".local/encvoy-image-clients.env", root), "utf8"));
   for (const role of ["CUSTOMER", "EMPLOYEE", "OUTSIDER"]) {
@@ -256,17 +257,14 @@ async function main() {
   console.log("PASS real Encvoy login with an existing email is refused without taking over the guest account.");
 
   stage = "revoke-employee-grants";
-  const currentProject = process.cwd();
-  const projectDirectory = existsSync(path.join(currentProject, "node_modules/@medusajs/cli/cli.js"))
-    ? currentProject
-    : path.join(rootPath, "examples/medusa");
-  const cliPath = path.join(projectDirectory, "node_modules/@medusajs/cli/cli.js");
-  const revoke = spawnSync(process.execPath, [cliPath, "exec", "./src/scripts/revoke-employee.ts"], {
+  const revoke = spawn(process.execPath, [cliPath, "exec", "./src/scripts/revoke-employee.ts"], {
     cwd: projectDirectory,
-    env: { ...process.env, EMPLOYEE_MEDUSA_USER_ID: staffProfile.data.user.id },
+    env: { ...process.env, TS_NODE_TRANSPILE_ONLY: "true", MEDUSA_DISABLE_TELEMETRY: "true", EMPLOYEE_MEDUSA_USER_ID: staffProfile.data.user.id },
     stdio: "ignore",
   });
-  check(!revoke.error && revoke.status === 0, "Employee grant revocation command failed.");
+  const [exitCode, signal] = await once(revoke, "close");
+  check(exitCode === 0, `Employee grant revocation command failed (${signal ?? exitCode}).`);
+  stage = "verify-revoked-employee-access";
   const revokedRequest = await api(new LocalHttpBrowser(), "/admin/users/me", "GET", staff.completed.data.token);
   check(revokedRequest.status === 401 || revokedRequest.status === 403, "An employee JWT remained valid after its grant was revoked.");
   console.log("PASS the operator revocation command immediately denies the copied employee JWT on the next Admin request.");

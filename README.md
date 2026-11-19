@@ -34,7 +34,7 @@ In PowerShell:
 npm install --prefix .local/runtime --save-exact node@22.23.5 --no-audit --no-fund
 $env:PATH = "$PWD\.local\runtime\node_modules\node\bin;$env:PATH"
 node --version
-npm ci --legacy-peer-deps --no-audit --no-fund
+npm ci --no-audit --no-fund
 ```
 
 In macOS Terminal:
@@ -43,7 +43,7 @@ In macOS Terminal:
 npm install --prefix .local/runtime --save-exact node@22.23.5 --no-audit --no-fund
 export PATH="$PWD/.local/runtime/node_modules/node/bin:$PATH"
 node --version
-npm ci --legacy-peer-deps --no-audit --no-fund
+npm ci --no-audit --no-fund
 ```
 
 Create and start Medusa's loopback PostgreSQL and Redis:
@@ -139,7 +139,7 @@ In this example the Medusa session cookie, employee grant, and any issued JWT ex
 
 ## Verify
 
-The real-image HTTP acceptance command is:
+From the workspace root, run the real-image HTTP acceptance check against the configured disposable stand. It runs the employee revocation command in `examples/medusa`. To test an independently installed consumer, run the same script by its absolute path from that consumer’s project root. The consumer must contain its Medusa configuration, the revocation script and its own CLI.
 
 ```sh
 RUN_ENCVOY_ACCEPTANCE=1 .local/runtime/node_modules/node/bin/node scripts/check-live-login.mjs

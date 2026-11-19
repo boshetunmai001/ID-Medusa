@@ -1,6 +1,6 @@
 # Project status
 
-The handoff contains medusa-plugin-encvoy-id 0.1.0 (SHA-256 `6fa1ecd562d0f560d5cf9e9d8c601a72bdd2fc58bb8e7b94bdc9bf20fe33b20b`). Compared file by file with archive F, only the package README changed. In a new independent Medusa 2.22.2 project, Node.js 22.23.5 installed 1,088 packages with npm ci from the supplied consumer lockfile. All installed plugin files matched the tarball. Typecheck and production Backend and Admin builds passed. Full and production-only online npm audits returned zero findings after GitHub withdrew GHSA-fc5q-39xc-vjpf. The Chrome, Safari and HTTP results below refer to archive F.
+The current verified local package is `medusa-plugin-encvoy-id@0.1.0`, SHA-256 `802378ee2bc2807d1a9bfc663e8a98dd41d54e06f78e95dffb957f5d347f2ac9`. The clean consumer build, HTTP acceptance, and customer and employee flows in Chrome and Safari passed on 2026-11-19. The workspace suite passed 52/52. See the [verification record](docs/verification.md).
 
 ## Historical checks on 2026-11-16
 

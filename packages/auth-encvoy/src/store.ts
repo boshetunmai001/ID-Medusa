@@ -4,7 +4,7 @@ import { Pool } from "pg"
 import type { PoolClient } from "pg"
 
 const STATE_TTL_SECONDS = 300
-const CONNECTION_TIMEOUT_MS = 3_000
+const CONNECTION_TIMEOUT_MS = 10_000
 const LOCK_TIMEOUT_MS = 3_000
 
 type LockContext = {
@@ -67,56 +67,76 @@ export class EncvoyStateStore {
   }
 
   private async initializeSchema(): Promise<void> {
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS encvoy_oidc_state (
-        state_hash char(64) PRIMARY KEY,
-        browser_hash char(64) NOT NULL,
-        context_hash char(64),
-        code_verifier text NOT NULL,
-        nonce text NOT NULL,
-        expires_at timestamptz NOT NULL
+    const connection = await this.pool.connect()
+
+    try {
+      await connection.query("BEGIN")
+      await connection.query(`SET LOCAL lock_timeout = '${LOCK_TIMEOUT_MS}ms'`)
+      await connection.query(
+        `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+        ["encvoy:state-store:schema-initialization:v1"],
       )
-    `)
-    await this.pool.query(`
-      ALTER TABLE encvoy_oidc_state
-      ADD COLUMN IF NOT EXISTS context_hash char(64)
-    `)
-    await this.pool.query(`
-      UPDATE encvoy_oidc_state
-      SET context_hash = repeat('0', 64)
-      WHERE context_hash IS NULL
-    `)
-    await this.pool.query(`
-      ALTER TABLE encvoy_oidc_state
-      ALTER COLUMN context_hash SET NOT NULL
-    `)
-    await this.pool.query(`
-      CREATE INDEX IF NOT EXISTS encvoy_oidc_state_expiry_idx
-      ON encvoy_oidc_state (expires_at)
-    `)
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS encvoy_consumed_medusa_jwt (
-        token_hash char(64) PRIMARY KEY,
-        expires_at timestamptz NOT NULL
-      )
-    `)
-    await this.pool.query(`
-      CREATE INDEX IF NOT EXISTS encvoy_consumed_medusa_jwt_expiry_idx
-      ON encvoy_consumed_medusa_jwt (expires_at)
-    `)
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS encvoy_employee_session_grant (
-        login_id text PRIMARY KEY,
-        user_id text NOT NULL,
-        created_at timestamptz NOT NULL DEFAULT now(),
-        expires_at timestamptz NOT NULL,
-        revoked_at timestamptz
-      )
-    `)
-    await this.pool.query(`
-      CREATE INDEX IF NOT EXISTS encvoy_employee_session_grant_user_idx
-      ON encvoy_employee_session_grant (user_id, expires_at)
-    `)
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS encvoy_oidc_state (
+          state_hash char(64) PRIMARY KEY,
+          browser_hash char(64) NOT NULL,
+          context_hash char(64),
+          code_verifier text NOT NULL,
+          nonce text NOT NULL,
+          expires_at timestamptz NOT NULL
+        )
+      `)
+      await connection.query(`
+        ALTER TABLE encvoy_oidc_state
+        ADD COLUMN IF NOT EXISTS context_hash char(64)
+      `)
+      await connection.query(`
+        UPDATE encvoy_oidc_state
+        SET context_hash = repeat('0', 64)
+        WHERE context_hash IS NULL
+      `)
+      await connection.query(`
+        ALTER TABLE encvoy_oidc_state
+        ALTER COLUMN context_hash SET NOT NULL
+      `)
+      await connection.query(`
+        CREATE INDEX IF NOT EXISTS encvoy_oidc_state_expiry_idx
+        ON encvoy_oidc_state (expires_at)
+      `)
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS encvoy_consumed_medusa_jwt (
+          token_hash char(64) PRIMARY KEY,
+          expires_at timestamptz NOT NULL
+        )
+      `)
+      await connection.query(`
+        CREATE INDEX IF NOT EXISTS encvoy_consumed_medusa_jwt_expiry_idx
+        ON encvoy_consumed_medusa_jwt (expires_at)
+      `)
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS encvoy_employee_session_grant (
+          login_id text PRIMARY KEY,
+          user_id text NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now(),
+          expires_at timestamptz NOT NULL,
+          revoked_at timestamptz
+        )
+      `)
+      await connection.query(`
+        CREATE INDEX IF NOT EXISTS encvoy_employee_session_grant_user_idx
+        ON encvoy_employee_session_grant (user_id, expires_at)
+      `)
+      await connection.query("COMMIT")
+    } catch (error) {
+      try {
+        await connection.query("ROLLBACK")
+      } catch {
+        // Preserve the original failure if rollback also fails.
+      }
+      throw error
+    } finally {
+      connection.release()
+    }
   }
 
   /** Store only hashes of the public state and browser proof. */

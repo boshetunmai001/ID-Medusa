@@ -6,7 +6,9 @@ import { EncvoyStateStore } from "../packages/auth-encvoy/src/store.js"
 
 test("state storage hashes browser bindings and consumes only a live matching state", async () => {
   const originalQuery = Pool.prototype.query
+  const originalConnect = Pool.prototype.connect
   const statements: Array<{ text: string; values: unknown[] }> = []
+  let connectionCount = 0
   Pool.prototype.query = function (...args: unknown[]) {
     const [text, values] = args as [string, unknown[]?]
     statements.push({ text, values: values ?? [] })
@@ -18,10 +20,24 @@ test("state storage hashes browser bindings and consumes only a live matching st
         : [],
     }) as never
   } as never
+  Pool.prototype.connect = (async function () {
+    connectionCount += 1
+    return {
+      query: async (text: string, values?: unknown[]) => {
+        statements.push({ text, values: values ?? [] })
+        return { rows: [] }
+      },
+      release: () => undefined,
+    }
+  }) as never
 
   const store = new EncvoyStateStore("postgres://localhost/encvoy-state-test")
   try {
     await store.initialize()
+    assert.equal(connectionCount, 1)
+    assert.equal(statements[0].text, "BEGIN")
+    assert.match(statements[2].text, /pg_advisory_xact_lock/)
+    assert.equal(statements.at(-1)?.text, "COMMIT")
     await store.saveState("raw-state", "raw-browser-proof", "stored-verifier", "stored-nonce")
     const saved = statements.find(({ text }) => text.includes("INSERT INTO encvoy_oidc_state"))
     assert.ok(saved)
@@ -56,6 +72,7 @@ test("state storage hashes browser bindings and consumes only a live matching st
     assert.equal(await store.consumeMedusaJwt("expired-medusa-jwt", Math.floor(Date.now() / 1000) - 1), false)
   } finally {
     Pool.prototype.query = originalQuery
+    Pool.prototype.connect = originalConnect
     await store.close()
   }
 })

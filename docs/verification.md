@@ -1,5 +1,24 @@
 # Verification checklist and evidence
 
+## Final package and browser verification, 2026-11-19
+
+The final locally packed `medusa-plugin-encvoy-id@0.1.0` archive is 16,824 bytes, SHA-256 `802378ee2bc2807d1a9bfc663e8a98dd41d54e06f78e95dffb957f5d347f2ac9`. A standalone Medusa 2.22.2 project installed it with its own lockfile and dependencies. Its installed store implementation matched the archive byte for byte. Clean installation, the full dependency tree, typecheck, and production Backend/Admin builds passed on Node 22.23.5. Workspace and consumer full and production-only npm audits each reported zero vulnerabilities. All 52 workspace tests passed against disposable PostgreSQL 16.16.
+
+- Chrome 157.0.8103.79 and Safari 18.6 signed in the synthetic customer, displayed the protected profile, signed out, and returned to the same customer ID on repeat login. In both browsers the authorized employee reached Orders. After logout, opening Orders again redirected to `/app/login`.
+- The standalone consumer passed live HTTP acceptance with real Encvoy 3.6.19, including conflict refusal, unbound employee denial, callback replay rejection, and immediate denial after operator revocation. Its disposable issuer used port 19091. Only the issuer port and the matching loopback allowlist in the temporary acceptance client were adjusted. Chrome and Safari used the real application UI.
+- Concurrent first-time initialization previously failed with PostgreSQL `23505`. Two independent pools can now initialize the same fresh schema through a transaction-scoped advisory lock. Separately, on a cold development server the first employee request had returned 503 while waiting for a pool connection. The pool now allows ten seconds to obtain a connection. The advisory lock still has a three-second timeout, and unavailable grant storage denies access. The cold-start HTTP integration passed with the final archive.
+- The proxy checks used disposable Nginx 1.27.5. The rate limit returned 429, and the sanitized access log retained paths and status codes. Callback location error logging needs the additional configuration in the [security guide](security.md) to keep query values out of upstream errors.
+
+The package registry lookup returned 404. Production proxy verification and installation from the public registry remain deployment and publication checks.
+
+## Workspace installation and revocation recheck on 2026-11-19
+
+Fresh macOS arm64 and Linux arm64 installations passed `npm ci --no-audit --no-fund`, `npm ls --all`, the provider build and workspace typecheck on Node 22.23.5 and npm 11.6.2. On Linux both `npm audit` and `npm audit --omit=dev` reported zero vulnerabilities. The production Backend/Admin build passed. The test suite passed 49 of 49 tests with PostgreSQL 16.16, including workspace and independent consumer CLI resolution. The workflow’s Medusa HTTP integration also passed against fresh disposable PostgreSQL and Redis.
+
+From the workspace root, two consecutive runs of `RUN_ENCVOY_ACCEPTANCE=1 node scripts/check-live-login.mjs` passed against the final installation, an isolated Encvoy 3.6.19 fixture and Medusa serving the built Admin assets. Both exercised real customer and staff login, conflict refusal, denial for an unbound employee and the operator revocation command. The next Admin request using the employee’s previous token was denied in both runs.
+
+During setup, earlier runs against the development server recorded a login timeout and database connection timeouts during concurrent customer completion. A separate intermediate run using a TCP forwarder returned 503 on an authorized employee request. The final CI-style run used PostgreSQL’s direct Docker port mapping. These runs establish functional results on the described fixtures; throughput and latency under load were not measured.
+
 ## Admin session checks on 2026-11-19
 
 The local configuration generator selected session authentication in a fresh example. The Backend and Admin builds passed, and the generated Admin bundle initialized the Medusa SDK with the session auth type. The provider build, workspace typecheck and 48 automated tests passed on Node.js 22.23.5. The Medusa HTTP integration ran separately on a disposable PostgreSQL 16.16 database and Redis. A staff session could read the Admin profile and update it from the configured origin. A write without Origin returned 403. Employee logout revoked the active grant. The protected Admin endpoint returned 401 for a revoked employee token both with and without a customer session cookie. That HTTP harness uses synthetic Medusa identities. A separate end-to-end run on 2026-11-19 exercised commit `7a61e24` with the packaged provider, a fresh independent Medusa 2.22.2 install, new PostgreSQL and Redis instances, and a disposable copy of the Encvoy 3.6.19 test stand. The standard configuration generator selected session mode. Full and production-only online audits of that install each reported zero findings.
@@ -10,7 +29,7 @@ The local configuration generator selected session authentication in a fresh exa
 
 The GitHub workflow runs the unit suite and the Medusa HTTP check for pushes and pull requests using disposable services. The unit suite also checks that the configured Admin middleware selects a staff session and skips a customer session before the grant check.
 
-The handoff contains medusa-plugin-encvoy-id 0.1.0 (SHA-256 `6fa1ecd562d0f560d5cf9e9d8c601a72bdd2fc58bb8e7b94bdc9bf20fe33b20b`). Compared file by file with archive F, only the package README changed. In a new independent Medusa 2.22.2 project, Node.js 22.23.5 installed 1,088 packages with npm ci from the supplied consumer lockfile. All installed plugin files matched the tarball. Typecheck and production Backend and Admin builds passed. Full and production-only online npm audits returned zero findings after GitHub withdrew GHSA-fc5q-39xc-vjpf. The Chrome, Safari and HTTP results below refer to archive F.
+The earlier handoff contained medusa-plugin-encvoy-id 0.1.0 (SHA-256 `6fa1ecd562d0f560d5cf9e9d8c601a72bdd2fc58bb8e7b94bdc9bf20fe33b20b`). Compared file by file with archive F, only the package README changed. In a new independent Medusa 2.22.2 project, Node.js 22.23.5 installed 1,088 packages with npm ci from the supplied consumer lockfile. All installed plugin files matched the tarball. Typecheck and production Backend and Admin builds passed. Full and production-only online npm audits returned zero findings after GitHub withdrew GHSA-fc5q-39xc-vjpf. The Chrome, Safari and HTTP results below refer to archive F.
 
 Keep protocol-fixture results separate from Encvoy acceptance. This page records the available local evidence; it does not certify another Encvoy release or a production deployment.
 
@@ -34,7 +53,7 @@ Chrome and Safari customer flows were confirmed on the application build on 2026
 
 ## Automated and local integration checks
 
-Use the pinned Node 22.23.5 and PostgreSQL server tools (`initdb`, `postgres`, `pg_ctl`, `createdb`, and `pg_isready`) from a clean workspace checkout. Install the lockfile first with `npm ci --legacy-peer-deps`; build the provider before typechecking dependent workspaces, then build the Medusa Backend/Admin:
+Use the pinned Node 22.23.5 and PostgreSQL server tools (`initdb`, `postgres`, `pg_ctl`, `createdb`, and `pg_isready`) from a clean workspace checkout. Install the lockfile first with `npm ci`; build the provider before typechecking dependent workspaces, then build the Medusa Backend/Admin:
 
 ```sh
 npm run build

@@ -23,7 +23,9 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci --legacy-peer-deps --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
+      - name: Validate the installed dependency tree
+        run: npm ls --all > /dev/null
       - run: npm run build && npm run typecheck
       - name: Run tests with temporary PostgreSQL
         run: |

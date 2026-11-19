@@ -106,6 +106,59 @@ test("PostgreSQL state consumption and advisory locks serialize concurrent reque
   }
 })
 
+test("independent pools serialize initial schema creation on a fresh schema", {
+  skip: !enabled,
+}, async () => {
+  const suffix = randomBytes(12).toString("hex")
+  const schema = `encvoy_store_init_${suffix}`
+  const admin = new Pool({ connectionString: databaseUrl, max: 1 })
+  const storeUrl = (poolName: string) => {
+    const url = new URL(databaseUrl!)
+    url.searchParams.set("application_name", `encvoy-init-${suffix}-${poolName}`)
+    url.searchParams.set("options", `-c search_path=${schema}`)
+    return url.toString()
+  }
+  // Distinct connection strings create distinct pools while targeting one database and schema.
+  const firstStore = new EncvoyStateStore(storeUrl("first"))
+  const secondStore = new EncvoyStateStore(storeUrl("second"))
+
+  try {
+    await admin.query(`CREATE SCHEMA "${schema}"`)
+
+    await Promise.all([firstStore.initialize(), secondStore.initialize()])
+
+    const tables = await admin.query<{ tablename: string }>(
+      "SELECT tablename FROM pg_tables WHERE schemaname = $1 ORDER BY tablename",
+      [schema],
+    )
+    assert.deepEqual(tables.rows.map(({ tablename }) => tablename), [
+      "encvoy_consumed_medusa_jwt",
+      "encvoy_employee_session_grant",
+      "encvoy_oidc_state",
+    ])
+
+    const indexes = await admin.query<{ indexname: string }>(
+      "SELECT indexname FROM pg_indexes WHERE schemaname = $1 ORDER BY indexname",
+      [schema],
+    )
+    assert.deepEqual(indexes.rows.map(({ indexname }) => indexname), [
+      "encvoy_consumed_medusa_jwt_expiry_idx",
+      "encvoy_consumed_medusa_jwt_pkey",
+      "encvoy_employee_session_grant_pkey",
+      "encvoy_employee_session_grant_user_idx",
+      "encvoy_oidc_state_expiry_idx",
+      "encvoy_oidc_state_pkey",
+    ])
+  } finally {
+    await Promise.all([firstStore.close(), secondStore.close()])
+    try {
+      await admin.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`)
+    } finally {
+      await admin.end()
+    }
+  }
+})
+
 test("employee grants bind to one user and are immediately revocable", {
   skip: !enabled,
 }, async () => {
