@@ -599,6 +599,42 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
     assert.equal(employeeGrantCalls.length, 1, "a customer-linked identity must not create a session grant")
   })
 
+  await t.test("socket reset diagnostics use a fixed safe cause class", async () => {
+    const resetServer = createServer((request) => {
+      request.socket.destroy()
+    })
+    await new Promise<void>((resolve, reject) => {
+      resetServer.once("error", reject)
+      resetServer.listen(0, "127.0.0.1", resolve)
+    })
+
+    try {
+      const address = resetServer.address()
+      assert.ok(address && typeof address !== "string")
+      const resetIssuer = `http://127.0.0.1:${address.port}`
+      const diagnostics: string[] = []
+      const resetProvider = new EncvoyAuthProvider({
+        logger: { warn: (line: string) => diagnostics.push(line) } as never,
+      }, { ...options, issuer: resetIssuer, clientSecret: "secret-sentinel-value" })
+      const result = await resetProvider.authenticate(startInput, {} as never)
+
+      assert.deepEqual(result, { success: false, error: "provider_unavailable" })
+      assert.equal(diagnostics.length, 1, "socket reset should emit one diagnostic line")
+      assert.deepEqual(JSON.parse(diagnostics[0]), {
+        event: "encvoy_auth_failure",
+        stage: "discovery",
+        actor_type: "customer",
+        public_error: "provider_unavailable",
+        cause: "UND_ERR_SOCKET",
+      })
+      assert.doesNotMatch(diagnostics[0], /secret-sentinel-value|127\.0\.0\.1|mock-code/)
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        resetServer.close((error) => error ? reject(error) : resolve())
+      })
+    }
+  })
+
   await t.test("unavailable discovery fails safely without returning a redirect or upstream details", async () => {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
     const diagnostics: string[] = []
@@ -618,7 +654,7 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
       cause: diagnostic.cause,
     })
     assert.equal(typeof diagnostic.cause, "string")
-    assert.match(diagnostic.cause as string, /^(ECONNREFUSED|ECONNRESET|ETIMEDOUT)$/)
+    assert.match(diagnostic.cause as string, /^(ECONNREFUSED|ECONNRESET|ETIMEDOUT|UND_ERR_SOCKET)$/)
     assert.doesNotMatch(diagnostics[0], /secret-sentinel-value|encvoy-test-secret|127\.0\.0\.1|mock-code/)
   })
 
