@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { tmpdir } from "node:os";
@@ -71,12 +71,23 @@ async function main() {
   ]);
 
   serverMayBeRunning = true;
-  run("pg_ctl", [
-    "--pgdata", dataDirectory,
-    "--log", path.join(temporaryDirectory, "server.log"),
-    "--options", `-h 127.0.0.1 -p ${port}`,
-    "--wait", "start",
-  ]);
+  try {
+    run("pg_ctl", [
+      "--pgdata", dataDirectory,
+      "--log", path.join(temporaryDirectory, "server.log"),
+      "--options", `-h 127.0.0.1 -p ${port} -c unix_socket_directories=`,
+      "--wait", "start",
+    ]);
+  } catch (error) {
+    try {
+      const log = await readFile(path.join(temporaryDirectory, "server.log"), "utf8");
+      const tail = log.split(/\r?\n/).slice(-60).join("\n").trimEnd();
+      if (tail) console.error(`Temporary PostgreSQL startup log (last 60 lines):\n${tail}`);
+    } catch (logError) {
+      console.error(`Could not read temporary PostgreSQL startup log: ${logError instanceof Error ? logError.message : "unknown error"}`);
+    }
+    throw error;
+  }
   run("createdb", ["--host", "127.0.0.1", "--port", String(port), "--username", username, database]);
 
   let ready = false;
