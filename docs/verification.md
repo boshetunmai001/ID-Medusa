@@ -1,5 +1,32 @@
 # Verification checklist and evidence
 
+## Pre-push recheck, 2026-11-20
+
+A fresh installation from the unchanged lockfile passed `npm ci --no-audit --no-fund`, `npm ls --all`, provider build, workspace typecheck and **61/61 tests with zero skips** on Node 22.23.5 and disposable PostgreSQL 16.15. Full and production-only audits reported zero vulnerabilities; script syntax checks and actionlint passed. The initially copied local `node_modules` tree had invalid installed versions; recreating it from the lockfile resolved that check without a dependency or lockfile change.
+
+A newly isolated Encvoy 3.6.19 stack and synthetic Medusa database passed provisioning, Backend/Admin builds, native HTTP integration and complete real Encvoy HTTP acceptance. The production build took about 785 seconds in this run and exited successfully; the reason for the delay was not established.
+
+Safari 18.6 was exercised through its actual UI in a private window: customer login, logout, signed-out protected profile, repeat login with the same customer ID, and pre-authorized employee login to Orders passed. Employee logout through the Admin menu could not be completed by the controller: menu activation did not open it and coordinate input returned `noWindowsAvailable`. Chrome 157.0.8103.79 could not be controlled: the tool repeatedly returned `Computer Use was not approved to use Google Chrome`. These are explicit browser coverage gaps; the successful HTTP logout/revocation tests are not presented as substitutes for those UI checks.
+
+
+## Fix verification, 2026-11-20
+
+This run applies to the local changes based on commit `1190e91dcab7595ce44bb757d5ce72e65a1df0d4`, using Node 22.23.5, npm 11.6.2 and disposable native PostgreSQL 16.15. Existing project databases and the existing Encvoy stand were not used for writes.
+
+- A clean `npm ci --no-audit --no-fund` and `npm ls --all` passed. Provider build, workspace typecheck, production Backend/Admin build, script syntax checks and actionlint passed. Full and production-only npm audits each reported zero vulnerabilities.
+- `npm test` passed **61/61, zero failures and zero skips**, including real PostgreSQL state consumption, independent-pool initialization, grant revocation and advisory-lock serialization. The first development run exposed two new test-fixture mistakes (a restored pool mock and an omitted `ECONNRESET` classification); both were corrected before this passing run.
+- Native Medusa HTTP integration passed, including employee write Origin enforcement and rejection of a revoked employee bearer token accompanied by a valid customer cookie.
+- In a separate copy, replacing `expectedState: state.value` with `oidc.skipStateCheck` now fails the runtime grant-argument assertion in the successful OIDC flow test. The full mutated run reported 59 passes, two failures (the assertion and its parent), zero skips. This closes the library-contract coverage gap; the atomic database consume remains the independent enforcement of state/browser/client binding.
+- The state-store probe ran `saveState → consumeState → withLock(shared key, 100 ms action)` at concurrency 50 and 200, three runs each: **750/750 succeeded, zero timeouts or other errors**. Runs at 50 took about 5.1 seconds; at 200 about 20.4–21.2 seconds. This is a synthetic shared-key workload, not a general throughput guarantee. Deliberately exhausting all five connections still produced the expected pool timeout after about ten seconds: already-consumed state stayed spent, while a consume operation that never obtained a connection left its state available.
+- A fresh, separately named Encvoy 3.6.19 stack on localhost:29090 successfully provisioned both confidential clients and three synthetic users. A repeat bootstrap passed. Unrelated seeded clients no longer invalidate the unfiltered client list; ambiguity, configuration and client-ID checks remain enforced.
+- Real Encvoy HTTP acceptance passed on a fresh Medusa database: customer and employee login, concurrent customer completion, replay/cancellation/browser binding, account conflict refusal, unbound employee denial and operator revocation. Temporary instrumentation recorded only claim presence and booleans: customer and employee ID tokens contained `email` and `email_verified: true`. No token or email value was logged by that instrumentation.
+- An unavailable issuer produced HTTP 401 `provider_unavailable` and a sanitized server diagnostic with stage `discovery`, actor `customer` and cause `ECONNREFUSED`. With a deliberately incorrect customer client secret on the disposable stand, real code exchange returned HTTP 401 `invalid_response`; the diagnostic named stage `token_exchange` and cause `OAUTH_WWW_AUTHENTICATE_CHALLENGE`. This negative run is an expected authentication refusal, not a successful acceptance run.
+
+The new local tarball is 19,163 bytes, SHA-256 `7f56f69825e154d3e5de3acbef173994899c9ef7d35f0c5196d0c723a5042785`. A separate Medusa 2.22.2 consumer installed it with its own lockfile and 1,089 packages, without workspace links; all 11 installed package files matched the tarball. Its full dependency tree, typecheck, Backend/Admin build and full/production audits passed (zero vulnerabilities). No peer or engine warning was emitted; dependency deprecation warnings remain.
+
+The later browser recheck is recorded above. Production proxy deployment was not repeated. Earlier Chrome/Safari and package hashes below describe their dated artifacts, not this modified working tree. The npm package remains unpublished; local implementation does not establish registry availability.
+
+
 ## Final package and browser verification, 2026-11-19
 
 The final locally packed `medusa-plugin-encvoy-id@0.1.0` archive is 16,824 bytes, SHA-256 `802378ee2bc2807d1a9bfc663e8a98dd41d54e06f78e95dffb957f5d347f2ac9`. A standalone Medusa 2.22.2 project installed it with its own lockfile and dependencies. Its installed store implementation matched the archive byte for byte. Clean installation, the full dependency tree, typecheck, and production Backend/Admin builds passed on Node 22.23.5. Workspace and consumer full and production-only npm audits each reported zero vulnerabilities. All 52 workspace tests passed against disposable PostgreSQL 16.16.

@@ -4,6 +4,20 @@ import test from "node:test"
 import { Pool } from "pg"
 import { EncvoyStateStore } from "../packages/auth-encvoy/src/store.js"
 
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve))
+}
+
 test("state storage hashes browser bindings and consumes only a live matching state", async () => {
   const originalQuery = Pool.prototype.query
   const originalConnect = Pool.prototype.connect
@@ -98,6 +112,7 @@ test("nested state-store locks reuse the transaction connection across instances
   const nestedStore = new EncvoyStateStore(databaseUrl)
   try {
     await outerStore.withLock("identity", async () => {
+      await nestedStore.withLock("identity", async () => undefined)
       await nestedStore.withLock("email", async () => undefined)
       await nestedStore.withLock("email", async () => undefined)
     })
@@ -109,5 +124,156 @@ test("nested state-store locks reuse the transaction connection across instances
   } finally {
     Pool.prototype.connect = originalConnect
     await outerStore.close()
+  }
+})
+
+test("same-key lock waiters do not check out a connection and another key can progress", async () => {
+  const originalConnect = Pool.prototype.connect
+  let connectionCount = 0
+  Pool.prototype.connect = (async function () {
+    connectionCount += 1
+    return {
+      query: async () => ({ rows: [] }),
+      release: () => undefined,
+    }
+  }) as never
+
+  const databaseUrl = "postgres://localhost/encvoy-lock-admission-test"
+  const firstStore = new EncvoyStateStore(databaseUrl)
+  const secondStore = new EncvoyStateStore(databaseUrl)
+  const firstEntered = deferred()
+  const releaseFirst = deferred()
+  const otherKeyEntered = deferred()
+  let sameKeyEntered = false
+
+  try {
+    const first = firstStore.withLock("shared", async () => {
+      firstEntered.resolve()
+      await releaseFirst.promise
+    })
+    await firstEntered.promise
+
+    const sameKey = secondStore.withLock("shared", async () => {
+      sameKeyEntered = true
+    })
+    await nextTurn()
+    assert.equal(connectionCount, 1, "a same-key waiter must remain before pool.connect")
+
+    const otherKey = secondStore.withLock("independent", async () => {
+      otherKeyEntered.resolve()
+    })
+    await otherKeyEntered.promise
+    assert.equal(connectionCount, 2, "a different key must be admitted independently")
+    assert.equal(sameKeyEntered, false)
+
+    releaseFirst.resolve()
+    await Promise.all([first, sameKey, otherKey])
+    assert.equal(connectionCount, 3)
+    assert.equal(sameKeyEntered, true)
+  } finally {
+    releaseFirst.resolve()
+    Pool.prototype.connect = originalConnect
+    await firstStore.close()
+  }
+})
+
+test("lock admission releases after connect and action failures", async () => {
+  const originalConnect = Pool.prototype.connect
+  let connectCount = 0
+  const firstConnect = deferred<never>()
+  Pool.prototype.connect = (async function () {
+    connectCount += 1
+    if (connectCount === 1) {
+      return firstConnect.promise
+    }
+    return {
+      query: async () => ({ rows: [] }),
+      release: () => undefined,
+    }
+  }) as never
+
+  const databaseUrl = "postgres://localhost/encvoy-lock-failure-test"
+  const store = new EncvoyStateStore(databaseUrl)
+  try {
+    const connectFailure = store.withLock("connect-failure", async () => undefined)
+    await nextTurn()
+    const waitingAfterConnectFailure = store.withLock("connect-failure", async () => "recovered")
+    firstConnect.reject(new Error("connect failed"))
+    await assert.rejects(connectFailure, /connect failed/)
+    assert.equal(await waitingAfterConnectFailure, "recovered")
+
+    await assert.rejects(
+      store.withLock("action-failure", async () => { throw new Error("action failed") }),
+      /action failed/,
+    )
+    assert.equal(await store.withLock("action-failure", async () => "recovered"), "recovered")
+  } finally {
+    Pool.prototype.connect = originalConnect
+    await store.close()
+  }
+})
+
+test("lock admission caps outstanding database operations and times out queued entries", async (t) => {
+  const originalConnect = Pool.prototype.connect
+  let connectionCount = 0
+  const releaseAll = deferred()
+  const fakeConnect = (async function () {
+    connectionCount += 1
+    return {
+      query: async () => ({ rows: [] }),
+      release: () => undefined,
+    }
+  }) as never
+  Pool.prototype.connect = fakeConnect
+
+  const fullDatabase = "postgres://localhost/encvoy-lock-limit-test"
+  const fullStore = new EncvoyStateStore(fullDatabase)
+  try {
+    const held = Array.from({ length: 256 }, (_, index) =>
+      fullStore.withLock(`key-${index}`, async () => releaseAll.promise),
+    )
+    await nextTurn()
+    assert.equal(connectionCount, 256)
+    await assert.rejects(
+      fullStore.withLock("overflow", async () => undefined),
+      (error: unknown) => (error as { code?: unknown }).code === "LOCK_QUEUE_FULL",
+    )
+    releaseAll.resolve()
+    await Promise.all(held)
+  } finally {
+    releaseAll.resolve()
+    Pool.prototype.connect = originalConnect
+    await fullStore.close()
+  }
+
+  Pool.prototype.connect = fakeConnect
+  const timeoutDatabase = "postgres://localhost/encvoy-lock-timeout-test"
+  const timeoutStore = new EncvoyStateStore(timeoutDatabase)
+  const active = deferred()
+  const releaseActive = deferred()
+  try {
+    t.mock.timers.enable({ apis: ["setTimeout"] })
+    const first = timeoutStore.withLock("same", async () => {
+      active.resolve()
+      await releaseActive.promise
+    })
+    await active.promise
+    const timedOut = timeoutStore.withLock("same", async () => undefined)
+    await nextTurn()
+    t.mock.timers.tick(30_000)
+    await assert.rejects(
+      timedOut,
+      (error: unknown) => (error as { code?: unknown }).code === "LOCK_QUEUE_TIMEOUT",
+    )
+
+    const recovered = timeoutStore.withLock("same", async () => "recovered")
+    releaseActive.resolve()
+    await first
+    assert.equal(await recovered, "recovered")
+  } finally {
+    releaseActive.resolve()
+    t.mock.timers.reset()
+    Pool.prototype.connect = originalConnect
+    await timeoutStore.close()
   }
 })

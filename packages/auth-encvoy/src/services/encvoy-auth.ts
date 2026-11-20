@@ -44,6 +44,16 @@ const CANCELLATION = "cancellation"
 const LOCAL_OIDC_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"])
 const DISCOVERY_CACHE_TTL_MS = 5 * 60 * 1000
 
+type DiagnosticStage =
+  | "discovery"
+  | "state_initialize"
+  | "state_save"
+  | "state_consume"
+  | "token_exchange"
+  | "claims"
+  | "identity"
+  | "grant"
+
 export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
   static identifier = "encvoy"
   static DISPLAY_NAME = "Encvoy ID"
@@ -75,6 +85,7 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
     input: AuthenticationInput,
     _authIdentityService: AuthIdentityProviderService,
   ): Promise<AuthenticationResponse> {
+    let stage: DiagnosticStage = "discovery"
     try {
       const request = input as RuntimeAuthInput
       if (request.actor_type !== this.config_.actorType) {
@@ -100,7 +111,9 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
       const codeVerifier = oidc.randomPKCECodeVerifier()
       const codeChallenge = await oidc.calculatePKCECodeChallenge(codeVerifier)
 
+      stage = "state_initialize"
       await this.stateStore_.initialize()
+      stage = "state_save"
       await this.stateStore_.saveState(
         state,
         browserProof,
@@ -123,7 +136,7 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
 
       return { success: true, location: location.href }
     } catch (error) {
-      return failure(this.publicError(error, "provider"))
+      return failure(this.reportFailure(error, stage, "provider"))
     }
   }
 
@@ -146,15 +159,17 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
     }
 
     let stored: Awaited<ReturnType<EncvoyStateStore["consumeState"]>>
+    let stateStage: DiagnosticStage = "state_initialize"
     try {
       await this.stateStore_.initialize()
+      stateStage = "state_consume"
       stored = await this.stateStore_.consumeState(
         state.value,
         browserProof,
         this.stateBinding(),
       )
     } catch (error) {
-      return failure(this.publicError(error, "provider"))
+      return failure(this.reportFailure(error, stateStage, "provider"))
     }
     if (!stored) {
       return failure(LOGIN_EXPIRED)
@@ -183,6 +198,7 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
       return failure(INVALID_RESPONSE)
     }
 
+    let stage: DiagnosticStage = "discovery"
     try {
       const configuration = await this.discover()
       const responseUrl = new URL(this.config_.callbackUrl)
@@ -192,7 +208,8 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
         responseUrl.searchParams.set("iss", issuer.value)
       }
 
-      const tokens = await oidc.authorizationCodeGrant(
+      stage = "token_exchange"
+      const tokens = await this.authorizationCodeGrant(
         configuration,
         responseUrl,
         {
@@ -202,6 +219,7 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
           idTokenExpected: true,
         },
       )
+      stage = "claims"
       const idToken = tokens.claims()
       if (!idToken) {
         return failure(INVALID_RESPONSE)
@@ -211,6 +229,7 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
         idToken,
         tokens.access_token,
       )
+      stage = "identity"
       const authIdentity = await this.resolveIdentity(authIdentityService, claims)
       if (!authIdentity) {
         return failure(NOT_AUTHORIZED)
@@ -221,6 +240,7 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
         if (typeof userId !== "string" || userId.length === 0) {
           return failure(NOT_AUTHORIZED)
         }
+        stage = "grant"
         await this.stateStore_.createEmployeeGrant(
           loginId,
           userId,
@@ -241,8 +261,17 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
         },
       }
     } catch (error) {
-      return failure(this.publicError(error, "callback"))
+      return failure(this.reportFailure(error, stage, "callback"))
     }
+  }
+
+  /** Keep the state check visible at the provider boundary for defense in depth. */
+  protected authorizationCodeGrant(
+    configuration: oidc.Configuration,
+    responseUrl: URL,
+    checks: oidc.AuthorizationCodeGrantChecks,
+  ): ReturnType<typeof oidc.authorizationCodeGrant> {
+    return oidc.authorizationCodeGrant(configuration, responseUrl, checks)
   }
 
   async register(
@@ -307,6 +336,7 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
         error instanceof oidc.ClientError
           ? INVALID_RESPONSE
           : this.publicError(error, "provider"),
+        error,
       )
     }
 
@@ -383,7 +413,7 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
           claims.sub,
         )
       } catch (error) {
-        throw new ProviderFailure(this.publicError(error, "callback"))
+        throw new ProviderFailure(this.publicError(error, "callback"), error)
       }
       if (userInfo.sub !== claims.sub) {
         throw new ProviderFailure(INVALID_RESPONSE)
@@ -447,7 +477,7 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
         existing = await authIdentityService.retrieve({ entity_id: id })
       } catch (error) {
         if (!isNotFound(error)) {
-          throw new ProviderFailure(PROVIDER_UNAVAILABLE)
+          throw new ProviderFailure(PROVIDER_UNAVAILABLE, error)
         }
       }
 
@@ -461,8 +491,8 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
             provider_metadata: providerMetadata,
             user_metadata: userMetadata,
           })
-        } catch {
-          throw new ProviderFailure(PROVIDER_UNAVAILABLE)
+        } catch (error) {
+          throw new ProviderFailure(PROVIDER_UNAVAILABLE, error)
         }
       }
 
@@ -496,8 +526,8 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
           provider_metadata: providerMetadata,
           user_metadata: userMetadata,
         })
-      } catch {
-        throw new ProviderFailure(PROVIDER_UNAVAILABLE)
+      } catch (error) {
+        throw new ProviderFailure(PROVIDER_UNAVAILABLE, error)
       }
     })
   }
@@ -584,6 +614,26 @@ export class EncvoyAuthProvider extends AbstractAuthModuleProvider {
     }
     return context === "provider" ? PROVIDER_UNAVAILABLE : INVALID_RESPONSE
   }
+
+  private reportFailure(
+    error: unknown,
+    stage: DiagnosticStage,
+    context: "provider" | "callback",
+  ): string {
+    const publicError = this.publicError(error, context)
+    try {
+      this.logger_?.warn(JSON.stringify({
+        event: "encvoy_auth_failure",
+        stage,
+        actor_type: this.config_.actorType,
+        public_error: publicError,
+        cause: diagnosticCause(error),
+      }))
+    } catch {
+      // Diagnostics must never change authentication behavior.
+    }
+    return publicError
+  }
 }
 
 export function entityId(
@@ -598,10 +648,130 @@ export function entityId(
 }
 
 class ProviderFailure extends Error {
-  constructor(readonly code: string) {
-    super(code)
+  constructor(readonly code: string, cause?: unknown) {
+    super(code, cause === undefined ? undefined : { cause })
     this.name = "ProviderFailure"
   }
+}
+
+const NETWORK_CAUSE_CLASSES = new Map<string, string>([
+  ["ECONNREFUSED", "ECONNREFUSED"],
+  ["ETIMEDOUT", "ETIMEDOUT"],
+  ["ECONNRESET", "ECONNRESET"],
+  ["EHOSTUNREACH", "EHOSTUNREACH"],
+  ["ENETUNREACH", "ENETUNREACH"],
+  ["EAI_AGAIN", "DNS_RETRY"],
+  ["ENOTFOUND", "DNS_NOT_FOUND"],
+])
+
+const OIDC_CAUSE_CODES = new Map<string, string>([
+  ["OAUTH_RESPONSE_BODY_ERROR", "OAUTH_RESPONSE_BODY_ERROR"],
+  ["OAUTH_AUTHORIZATION_RESPONSE_ERROR", "OAUTH_AUTHORIZATION_RESPONSE_ERROR"],
+  ["OAUTH_WWW_AUTHENTICATE_CHALLENGE", "OAUTH_WWW_AUTHENTICATE_CHALLENGE"],
+  ["OAUTH_UNSUPPORTED_OPERATION", "OAUTH_UNSUPPORTED_OPERATION"],
+  ["OAUTH_PARSE_ERROR", "OAUTH_PARSE_ERROR"],
+  ["OAUTH_INVALID_RESPONSE", "OAUTH_INVALID_RESPONSE"],
+  ["OAUTH_INVALID_REQUEST", "OAUTH_INVALID_REQUEST"],
+  ["OAUTH_RESPONSE_IS_NOT_JSON", "OAUTH_RESPONSE_IS_NOT_JSON"],
+  ["OAUTH_RESPONSE_IS_NOT_CONFORM", "OAUTH_RESPONSE_IS_NOT_CONFORM"],
+  ["OAUTH_HTTP_REQUEST_FORBIDDEN", "OAUTH_HTTP_REQUEST_FORBIDDEN"],
+  ["OAUTH_REQUEST_PROTOCOL_FORBIDDEN", "OAUTH_REQUEST_PROTOCOL_FORBIDDEN"],
+  ["OAUTH_JWT_TIMESTAMP_CHECK_FAILED", "OAUTH_JWT_TIMESTAMP_CHECK_FAILED"],
+  ["OAUTH_JWT_CLAIM_COMPARISON_FAILED", "OAUTH_JWT_CLAIM_COMPARISON_FAILED"],
+  ["OAUTH_JSON_ATTRIBUTE_COMPARISON_FAILED", "OAUTH_JSON_ATTRIBUTE_COMPARISON_FAILED"],
+  ["OAUTH_KEY_SELECTION_FAILED", "OAUTH_KEY_SELECTION_FAILED"],
+  ["OAUTH_MISSING_SERVER_METADATA", "OAUTH_MISSING_SERVER_METADATA"],
+  ["OAUTH_INVALID_SERVER_METADATA", "OAUTH_INVALID_SERVER_METADATA"],
+])
+
+const OIDC_ERROR_CLASSES = new Map<string, string>([
+  ["invalid_client", "OIDC_INVALID_CLIENT"],
+  ["invalid_grant", "OIDC_INVALID_GRANT"],
+  ["invalid_request", "OIDC_INVALID_REQUEST"],
+  ["unauthorized_client", "OIDC_UNAUTHORIZED_CLIENT"],
+  ["unsupported_grant_type", "OIDC_UNSUPPORTED_GRANT_TYPE"],
+  ["invalid_scope", "OIDC_INVALID_SCOPE"],
+  ["access_denied", "OIDC_ACCESS_DENIED"],
+  ["server_error", "OIDC_SERVER_ERROR"],
+  ["temporarily_unavailable", "OIDC_TEMPORARILY_UNAVAILABLE"],
+])
+
+const POSTGRES_CAUSE_CLASSES = new Map<string, string>([
+  ["08", "POSTGRES_CONNECTION"],
+  ["28", "POSTGRES_AUTHENTICATION"],
+  ["40", "POSTGRES_TRANSACTION"],
+  ["53", "POSTGRES_RESOURCE"],
+  ["55", "POSTGRES_LOCK"],
+  ["57", "POSTGRES_SERVER"],
+  ["XX", "POSTGRES_INTERNAL"],
+])
+
+function diagnosticCause(error: unknown): string {
+  const visited = new Set<unknown>()
+  const pending: unknown[] = [error]
+  for (let depth = 0; depth < 16 && pending.length > 0; depth++) {
+    const current = pending.shift()
+    if (current === null || current === undefined) {
+      continue
+    }
+    if (visited.has(current)) {
+      continue
+    }
+    visited.add(current)
+
+    if (typeof current !== "object" && typeof current !== "function") {
+      continue
+    }
+
+    let code: unknown
+    let oauthError: unknown
+    let cause: unknown
+    let errors: unknown
+    let message: unknown
+    try {
+      code = (current as { code?: unknown }).code
+      oauthError = (current as { error?: unknown }).error
+      cause = (current as { cause?: unknown }).cause
+      errors = (current as { errors?: unknown }).errors
+      message = (current as { message?: unknown }).message
+    } catch {
+      continue
+    }
+
+    if (typeof oauthError === "string") {
+      const oidcClass = OIDC_ERROR_CLASSES.get(oauthError)
+      if (oidcClass) {
+        return oidcClass
+      }
+    }
+    if (typeof code === "string") {
+      const networkClass = NETWORK_CAUSE_CLASSES.get(code)
+      if (networkClass) {
+        return networkClass
+      }
+      const oidcClass = OIDC_CAUSE_CODES.get(code)
+      if (oidcClass) {
+        return oidcClass
+      }
+      if (/^[0-9A-Z]{5}$/.test(code)) {
+        const postgresClass = POSTGRES_CAUSE_CLASSES.get(code.slice(0, 2))
+        if (postgresClass) {
+          return postgresClass
+        }
+      }
+    }
+    if (message === "timeout exceeded when trying to connect") {
+      return "POOL_CONNECTION_TIMEOUT"
+    }
+
+    if (cause !== undefined) {
+      pending.push(cause)
+    }
+    if (Array.isArray(errors)) {
+      pending.push(...errors.slice(0, 16))
+    }
+  }
+  return "UNKNOWN"
 }
 
 function failure(error: string): AuthenticationResponse {

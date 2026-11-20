@@ -5,6 +5,12 @@ import * as oidc from "openid-client";
 import { LocalHttpBrowser, LocalCheckError, requireCheck as check } from "./lib/local-http-browser.mjs";
 import { verifyImageSeed } from "./lib/verify-image-seed.mjs";
 import { restrictFileMode, setPrivateUmask } from "./lib/platform.mjs";
+import {
+  clientMatches,
+  findRecoveryCandidate,
+  parseClientList,
+  recoveredClientMatches,
+} from "./lib/encvoy-client-recovery.mjs";
 
 // Local-only provisioning through Encvoy 3.6.19's real OIDC and administration API.
 // The vendor's built-in public client bootstraps the seeded Editor account.
@@ -15,33 +21,6 @@ const stateFile = new URL(".local/encvoy-image-bootstrap.json", root);
 const clientsFile = new URL(".local/encvoy-image-clients.env", root);
 let stage = "load-private-configuration";
 class BuiltinAuthenticationRejected extends Error {}
-
-function sameValues(actual, expected) {
-  if (!Array.isArray(actual) || actual.length !== expected.length) return false;
-  const sortedExpected = [...expected].sort();
-  return [...actual].sort().every((value, index) => value === sortedExpected[index]);
-}
-
-function clientMatches(client, expected, names = [expected.name]) {
-  return client && (names === null || names.includes(client.name)) && client.domain === expected.domain &&
-    sameValues(client.redirect_uris, expected.redirect_uris) &&
-    sameValues(client.grant_types, expected.grant_types) &&
-    sameValues(client.response_types, expected.response_types) &&
-    client.token_endpoint_auth_method === expected.token_endpoint_auth_method &&
-    client.introspection_endpoint_auth_method === expected.introspection_endpoint_auth_method &&
-    client.revocation_endpoint_auth_method === expected.revocation_endpoint_auth_method &&
-    client.id_token_signed_response_alg === expected.id_token_signed_response_alg &&
-    client.subject_type === expected.subject_type && typeof client.client_secret === "string";
-}
-
-function clientListItems(result) {
-  const items = Array.isArray(result) ? result : result?.items ?? result?.data ?? result?.clients;
-  check(Array.isArray(items), "The Encvoy client list returned an unsupported response.");
-  const total = Array.isArray(result) ? undefined : result.totalCount ?? result.total_count ?? result.count;
-  check(total === undefined || (Number.isFinite(Number(total)) && Number(total) <= items.length), "The Encvoy client list was incomplete.");
-  check(items.length < 100, "The Encvoy client list may be incomplete.");
-  return items;
-}
 
 async function privateAtomicWrite(file, content) {
   const temporary = new URL(file.href + `.${process.pid}.tmp`);
@@ -224,22 +203,20 @@ async function main() {
       revocation_endpoint_auth_method: "client_secret_basic", id_token_signed_response_alg: "RS256", subject_type: "public",
     };
     stage = `recover-${actor.toLowerCase()}-client`;
-    const listed = clientListItems(await api("clients?limit=100&offset=0"));
+    const listed = parseClientList(await api("clients?limit=100&offset=0"));
     const legacyName = `Medusa ${actor.toLowerCase()} [${intent.nonce}]`;
-    const candidates = listed.filter((client) => client?.name === displayName || client?.name === intent.name || client?.name === legacyName);
-    check(listed.length === candidates.length, "The client search returned entries outside the saved creation intent.");
-    check(candidates.length <= 1, "Several applications match the saved creation intent; refusing ambiguous recovery.");
+    const candidateNames = [displayName, intent.name, legacyName];
+    const candidate = findRecoveryCandidate(listed, candidateNames);
     let created;
-    if (candidates.length === 1) {
-      const candidateId = candidates[0]?.client_id;
-      check(typeof candidateId === "string", "The matching application list entry has no client ID.");
+    if (candidate) {
+      const candidateId = candidate.client_id;
       const recovered = await api(`clients/${encodeURIComponent(candidateId)}`);
-      check(clientMatches(recovered, expected, [displayName, intent.name, legacyName]), "The matching application does not have the saved configuration or recoverable secret.");
+      check(recoveredClientMatches(candidate, recovered, expected, candidateNames), "The matching application does not have the saved configuration or recoverable secret.");
       created = { client_id: recovered.client_id, client_secret: recovered.client_secret };
       if (recovered.name !== displayName) {
         await api(`clients/${encodeURIComponent(candidateId)}`, "PUT", { name: displayName });
         const renamed = await api(`clients/${encodeURIComponent(candidateId)}`);
-        check(renamed?.name === displayName && clientMatches(renamed, expected), "The recovered application could not be given a readable display name.");
+        check(renamed?.name === displayName && recoveredClientMatches(candidate, renamed, expected), "The recovered application could not be given a readable display name.");
       }
     } else {
       stage = `create-${actor.toLowerCase()}-client`;

@@ -1,6 +1,6 @@
 # Project status
 
-The current verified local package is `medusa-plugin-encvoy-id@0.1.0`, SHA-256 `802378ee2bc2807d1a9bfc663e8a98dd41d54e06f78e95dffb957f5d347f2ac9`. The clean consumer build, HTTP acceptance, and customer and employee flows in Chrome and Safari passed on 2026-11-19. The workspace suite passed 52/52. See the [verification record](docs/verification.md).
+The local fixes based on commit `1190e91` passed 61/61 tests with no skips, Backend/Admin builds, native Medusa HTTP integration and real Encvoy 3.6.19 HTTP acceptance on 2026-11-20. The shared-key load probe passed all 750 operations. Fresh and repeated Encvoy provisioning passed. A later Safari UI recheck passed customer login/logout/repeat login and employee access to Orders; employee UI logout and Chrome control remain unverified because of controller access failures. See the [verification record](docs/verification.md); prior package hashes and browser results below are historical and do not identify this modified working tree.
 
 ## Historical checks on 2026-11-16
 

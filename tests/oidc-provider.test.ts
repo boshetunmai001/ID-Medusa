@@ -35,6 +35,19 @@ const originalMethods = {
   withLock: EncvoyStateStore.prototype.withLock,
 }
 
+class InspectingAuthProvider extends EncvoyAuthProvider {
+  readonly authorizationChecks: oidc.AuthorizationCodeGrantChecks[] = []
+
+  protected override authorizationCodeGrant(
+    configuration: oidc.Configuration,
+    responseUrl: URL,
+    checks: oidc.AuthorizationCodeGrantChecks,
+  ) {
+    this.authorizationChecks.push(checks)
+    return super.authorizationCodeGrant(configuration, responseUrl, checks)
+  }
+}
+
 EncvoyStateStore.prototype.initialize = async function () {
   stateStoreCalls.push("initialize")
 }
@@ -190,7 +203,7 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
     allowInsecureLocalhost: true,
   }
   const browserProof = randomBytes(32).toString("base64url")
-  const provider = new EncvoyAuthProvider({}, options)
+  const provider = new InspectingAuthProvider({}, options)
   const startInput = {
     actor_type: "customer",
     url: "/auth/customer/encvoy-customer",
@@ -239,6 +252,8 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
       body: {},
     }, authService as never)
     assert.equal(callback.success, true)
+    assert.equal(provider.authorizationChecks[0]?.expectedState, state)
+    assert.notEqual(provider.authorizationChecks[0]?.expectedState, oidc.skipStateCheck)
     assert.deepEqual(stateStoreCalls, ["initialize", "save", "initialize", "consume"])
     assert.equal(callback.authIdentity?.id, "auth_1")
     assert.equal(observedVerifier.length > 40, true)
@@ -586,9 +601,25 @@ test("OIDC code flow validates signatures, issuer, audience, nonce, expiry, and 
 
   await t.test("unavailable discovery fails safely without returning a redirect or upstream details", async () => {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
-    const unavailableProvider = new EncvoyAuthProvider({}, options)
+    const diagnostics: string[] = []
+    const diagnosticOptions = { ...options, clientSecret: "secret-sentinel-value" }
+    const unavailableProvider = new EncvoyAuthProvider({
+      logger: { warn: (line: string) => diagnostics.push(line) } as never,
+    }, diagnosticOptions)
     const result = await unavailableProvider.authenticate(startInput, {} as never)
     assert.deepEqual(result, { success: false, error: "provider_unavailable" })
+    assert.equal(diagnostics.length, 1, "discovery failures should emit one diagnostic line")
+    const diagnostic = JSON.parse(diagnostics[0]) as Record<string, unknown>
+    assert.deepEqual(diagnostic, {
+      event: "encvoy_auth_failure",
+      stage: "discovery",
+      actor_type: "customer",
+      public_error: "provider_unavailable",
+      cause: diagnostic.cause,
+    })
+    assert.equal(typeof diagnostic.cause, "string")
+    assert.match(diagnostic.cause as string, /^(ECONNREFUSED|ECONNRESET|ETIMEDOUT)$/)
+    assert.doesNotMatch(diagnostics[0], /secret-sentinel-value|encvoy-test-secret|127\.0\.0\.1|mock-code/)
   })
 
   t.after(async () => {

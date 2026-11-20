@@ -106,6 +106,51 @@ test("PostgreSQL state consumption and advisory locks serialize concurrent reque
   }
 })
 
+test("PostgreSQL advisory locks serialize same-key work across independent pools", {
+  skip: !enabled,
+}, async () => {
+  const suffix = randomBytes(12).toString("hex")
+  const secondUrl = new URL(databaseUrl!)
+  secondUrl.searchParams.set("application_name", `encvoy-lock-overlap-${suffix}`)
+  const firstStore = new EncvoyStateStore(databaseUrl!)
+  const secondStore = new EncvoyStateStore(secondUrl.toString())
+  let active = 0
+  let maximumActive = 0
+  let secondEntered = false
+  let releaseFirst!: () => void
+  let firstEntered!: () => void
+  const firstHasEntered = new Promise<void>((resolve) => { firstEntered = resolve })
+  const release = new Promise<void>((resolve) => { releaseFirst = resolve })
+
+  try {
+    const first = firstStore.withLock(`cross-pool:${suffix}`, async () => {
+      active += 1
+      maximumActive = Math.max(maximumActive, active)
+      firstEntered()
+      await release
+      active -= 1
+    })
+    await firstHasEntered
+
+    const second = secondStore.withLock(`cross-pool:${suffix}`, async () => {
+      secondEntered = true
+      active += 1
+      maximumActive = Math.max(maximumActive, active)
+      active -= 1
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.equal(secondEntered, false, "the second pool must wait on PostgreSQL's advisory lock")
+
+    releaseFirst()
+    await Promise.all([first, second])
+    assert.equal(maximumActive, 1)
+    assert.equal(secondEntered, true)
+  } finally {
+    releaseFirst()
+    await Promise.all([firstStore.close(), secondStore.close()])
+  }
+})
+
 test("independent pools serialize initial schema creation on a fresh schema", {
   skip: !enabled,
 }, async () => {
