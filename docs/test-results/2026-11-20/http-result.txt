@@ -1,0 +1,1 @@
+Medusa integration passed: concurrent customer provisioning, collision refusal, actor isolation, employee grant revocation on logout, revoked-token denial (including a customer cookie with a revoked employee JWT), browser-cookie renewal, account switching, HTTP protections, and local logout.

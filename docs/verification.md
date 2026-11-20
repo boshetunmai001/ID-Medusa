@@ -1,5 +1,9 @@
 # Verification checklist and evidence
 
+## Green GitHub CI, 2026-11-20
+
+Commit `30518839267b7eec80f35ee6190b34207a16fe5e` passed all workflow steps, including **62/62 tests with zero skips**, dependency-tree validation, build/typecheck, database migration and Medusa HTTP integration. [Published results, TAP output and CI status](test-results/2026-11-20/README.md). This CI result does not extend the browser coverage described below.
+
 ## Pre-push recheck, 2026-11-20
 
 A fresh installation from the unchanged lockfile passed `npm ci --no-audit --no-fund`, `npm ls --all`, provider build, workspace typecheck and **61/61 tests with zero skips** on Node 22.23.5 and disposable PostgreSQL 16.15. Full and production-only audits reported zero vulnerabilities; script syntax checks and actionlint passed. The initially copied local `node_modules` tree had invalid installed versions; recreating it from the lockfile resolved that check without a dependency or lockfile change.

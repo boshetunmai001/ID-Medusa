@@ -1,0 +1,385 @@
+TAP version 13
+# Subtest: Admin start and callback preserve the browser-proof cookie
+ok 1 - Admin start and callback preserve the browser-proof cookie
+  ---
+  duration_ms: 28.899108
+  type: 'test'
+  ...
+# Subtest: employee callback JWT is exchanged for a server-side Admin session
+ok 2 - employee callback JWT is exchanged for a server-side Admin session
+  ---
+  duration_ms: 0.908215
+  type: 'test'
+  ...
+# Subtest: Admin widget uses session auth and does not persist the callback JWT
+ok 3 - Admin widget uses session auth and does not persist the callback JWT
+  ---
+  duration_ms: 13.944369
+  type: 'test'
+  ...
+# Subtest: Admin auth failures expose no network, upstream, or parsing details
+ok 4 - Admin auth failures expose no network, upstream, or parsing details
+  ---
+  duration_ms: 1.444446
+  type: 'test'
+  ...
+# Subtest: Admin development responses receive anti-framing and browser security headers
+ok 5 - Admin development responses receive anti-framing and browser security headers
+  ---
+  duration_ms: 1.200125
+  type: 'test'
+  ...
+# Subtest: production reverse-proxy snippet applies security headers to Admin
+ok 6 - production reverse-proxy snippet applies security headers to Admin
+  ---
+  duration_ms: 0.750601
+  type: 'test'
+  ...
+# Subtest: production access-log example records paths without callback query data
+ok 7 - production access-log example records paths without callback query data
+  ---
+  duration_ms: 0.352792
+  type: 'test'
+  ...
+# Subtest: production auth rate-limit directives return 429 and filter warnings
+ok 8 - production auth rate-limit directives return 429 and filter warnings
+  ---
+  duration_ms: 0.278784
+  type: 'test'
+  ...
+# Subtest: sensitive callback error logging is discarded at the location
+ok 9 - sensitive callback error logging is discarded at the location
+  ---
+  duration_ms: 0.216657
+  type: 'test'
+  ...
+# Subtest: completeCustomer returns the already-linked customer without provisioning again
+ok 10 - completeCustomer returns the already-linked customer without provisioning again
+  ---
+  duration_ms: 1.717046
+  type: 'test'
+  ...
+# Subtest: completeCustomer rejects non-customer identities and unverified email
+ok 11 - completeCustomer rejects non-customer identities and unverified email
+  ---
+  duration_ms: 0.709332
+  type: 'test'
+  ...
+# Subtest: completeCustomer refuses an existing email instead of linking or overwriting it
+ok 12 - completeCustomer refuses an existing email instead of linking or overwriting it
+  ---
+  duration_ms: 0.496385
+  type: 'test'
+  ...
+# Subtest: logout verifies session state after an ambiguous delete response
+ok 13 - logout verifies session state after an ambiguous delete response
+  ---
+  duration_ms: 2.533609
+  type: 'test'
+  ...
+# Subtest: logout reports failure when the protected session is still active
+ok 14 - logout reports failure when the protected session is still active
+  ---
+  duration_ms: 1.037469
+  type: 'test'
+  ...
+# Subtest: Admin employee grant middleware allows active grants, denies revoked grants, and fails closed
+ok 15 - Admin employee grant middleware allows active grants, denies revoked grants, and fails closed
+  ---
+  duration_ms: 2.086247
+  type: 'test'
+  ...
+# Subtest: employee logout revokes only its signed grant and fails closed on store errors
+ok 16 - employee logout revokes only its signed grant and fails closed on store errors
+  ---
+  duration_ms: 0.452161
+  type: 'test'
+  ...
+# Subtest: client recovery ignores unrelated clients and selects zero or one matching intent
+ok 17 - client recovery ignores unrelated clients and selects zero or one matching intent
+  ---
+  duration_ms: 0.661047
+  type: 'test'
+  ...
+# Subtest: client recovery rejects duplicate intent matches
+ok 18 - client recovery rejects duplicate intent matches
+  ---
+  duration_ms: 0.312921
+  type: 'test'
+  ...
+# Subtest: recovered client detail must have the complete configuration and a secret
+ok 19 - recovered client detail must have the complete configuration and a secret
+  ---
+  duration_ms: 0.213857
+  type: 'test'
+  ...
+# Subtest: client recovery rejects ambiguous or capped client lists as incomplete
+ok 20 - client recovery rejects ambiguous or capped client lists as incomplete
+  ---
+  duration_ms: 0.155656
+  type: 'test'
+  ...
+# Subtest: recovered client detail ID must match the list candidate ID
+ok 21 - recovered client detail ID must match the list candidate ID
+  ---
+  duration_ms: 0.071052
+  type: 'test'
+  ...
+# Subtest: authBrowser requires same-origin POST and creates an actor-specific proof cookie
+ok 22 - authBrowser requires same-origin POST and creates an actor-specific proof cookie
+  ---
+  duration_ms: 1.783275
+  type: 'test'
+  ...
+# Subtest: authBrowser uses Secure-prefixed cookies outside local HTTP development
+ok 23 - authBrowser uses Secure-prefixed cookies outside local HTTP development
+  ---
+  duration_ms: 0.234882
+  type: 'test'
+  ...
+# Subtest: consumeEncvoyJwt stores only a valid Encvoy customer token once
+ok 24 - consumeEncvoyJwt stores only a valid Encvoy customer token once
+  ---
+  duration_ms: 0.332116
+  type: 'test'
+  ...
+# Subtest: hydrateCompletedCustomer requires the persisted customer link and hydrates actor context
+ok 25 - hydrateCompletedCustomer requires the persisted customer link and hydrates actor context
+  ---
+  duration_ms: 0.248161
+  type: 'test'
+  ...
+# Subtest: Admin grant middleware receives only staff session identities
+ok 26 - Admin grant middleware receives only staff session identities
+  ---
+  duration_ms: 0.533457
+  type: 'test'
+  ...
+# Subtest: Admin cookie writes require an exact Origin and machine requests can omit it
+ok 27 - Admin cookie writes require an exact Origin and machine requests can omit it
+  ---
+  duration_ms: 0.371594
+  type: 'test'
+  ...
+# Subtest: source Encvoy migrations accept only the dedicated local database
+ok 28 - source Encvoy migrations accept only the dedicated local database
+  ---
+  duration_ms: 1.010046
+  type: 'test'
+  ...
+# Subtest: live acceptance resolves the workspace app and an independent consumer
+ok 29 - live acceptance resolves the workspace app and an independent consumer
+  ---
+  duration_ms: 13.306335
+  type: 'test'
+  ...
+# Subtest: OIDC code flow validates signatures, issuer, audience, nonce, expiry, and one-time state
+    # Subtest: successful verified token creates a customer identity and uses PKCE
+    ok 1 - successful verified token creates a customer identity and uses PKCE
+      ---
+      duration_ms: 45.111036
+      type: 'test'
+      ...
+    # Subtest: repeat customer login reuses the configured provider instance identity
+    ok 2 - repeat customer login reuses the configured provider instance identity
+      ---
+      duration_ms: 15.371982
+      type: 'test'
+      ...
+    # Subtest: coalesces concurrent discovery and refreshes metadata after five minutes
+    ok 3 - coalesces concurrent discovery and refreshes metadata after five minutes
+      ---
+      duration_ms: 8.424765
+      type: 'test'
+      ...
+    # Subtest: rejects invalid signature in ID token
+    ok 4 - rejects invalid signature in ID token
+      ---
+      duration_ms: 11.751283
+      type: 'test'
+      ...
+    # Subtest: rejects invalid issuer in ID token
+    ok 5 - rejects invalid issuer in ID token
+      ---
+      duration_ms: 4.835292
+      type: 'test'
+      ...
+    # Subtest: rejects invalid audience in ID token
+    ok 6 - rejects invalid audience in ID token
+      ---
+      duration_ms: 4.957504
+      type: 'test'
+      ...
+    # Subtest: rejects invalid nonce in ID token
+    ok 7 - rejects invalid nonce in ID token
+      ---
+      duration_ms: 3.819058
+      type: 'test'
+      ...
+    # Subtest: rejects invalid expired in ID token
+    ok 8 - rejects invalid expired in ID token
+      ---
+      duration_ms: 3.585362
+      type: 'test'
+      ...
+    # Subtest: rejects invalid unverified-email in ID token
+    ok 9 - rejects invalid unverified-email in ID token
+      ---
+      duration_ms: 5.85082
+      type: 'test'
+      ...
+    # Subtest: rejects invalid userinfo-subject in ID token
+    ok 10 - rejects invalid userinfo-subject in ID token
+      ---
+      duration_ms: 6.024825
+      type: 'test'
+      ...
+    # Subtest: uses UserInfo only when the ID token omits email and verifies the subject
+    ok 11 - uses UserInfo only when the ID token omits email and verifies the subject
+      ---
+      duration_ms: 9.041325
+      type: 'test'
+      ...
+    # Subtest: consumes callback state once and binds it to the initiating browser
+    ok 12 - consumes callback state once and binds it to the initiating browser
+      ---
+      duration_ms: 12.579033
+      type: 'test'
+      ...
+    # Subtest: rejects a conflicting callback issuer
+    ok 13 - rejects a conflicting callback issuer
+      ---
+      duration_ms: 1.172331
+      type: 'test'
+      ...
+    # Subtest: consumes state on cancellation and rejects callback URL overrides
+    ok 14 - consumes state on cancellation and rejects callback URL overrides
+      ---
+      duration_ms: 0.786487
+      type: 'test'
+      ...
+    # Subtest: rejects discovery metadata without exact issuer, RS256, S256, or Basic auth
+    ok 15 - rejects discovery metadata without exact issuer, RS256, S256, or Basic auth
+      ---
+      duration_ms: 3.848459
+      type: 'test'
+      ...
+    # Subtest: user callbacks require a provisioned, user-only identity
+    ok 16 - user callbacks require a provisioned, user-only identity
+      ---
+      duration_ms: 9.168364
+      type: 'test'
+      ...
+    # Subtest: socket reset diagnostics use a fixed safe cause class
+    ok 17 - socket reset diagnostics use a fixed safe cause class
+      ---
+      duration_ms: 4.872655
+      type: 'test'
+      ...
+    # Subtest: unavailable discovery fails safely without returning a redirect or upstream details
+    ok 18 - unavailable discovery fails safely without returning a redirect or upstream details
+      ---
+      duration_ms: 1.804519
+      type: 'test'
+      ...
+    1..18
+ok 30 - OIDC code flow validates signatures, issuer, audience, nonce, expiry, and one-time state
+  ---
+  duration_ms: 161.386669
+  type: 'test'
+  ...
+# Subtest: PostgreSQL state is bound to browser, client context, expiry, and one-time use
+ok 31 - PostgreSQL state is bound to browser, client context, expiry, and one-time use
+  ---
+  duration_ms: 63.936666
+  type: 'test'
+  ...
+# Subtest: PostgreSQL state consumption and advisory locks serialize concurrent requests
+ok 32 - PostgreSQL state consumption and advisory locks serialize concurrent requests
+  ---
+  duration_ms: 259.870329
+  type: 'test'
+  ...
+# Subtest: PostgreSQL advisory locks serialize same-key work across independent pools
+ok 33 - PostgreSQL advisory locks serialize same-key work across independent pools
+  ---
+  duration_ms: 57.606316
+  type: 'test'
+  ...
+# Subtest: independent pools serialize initial schema creation on a fresh schema
+ok 34 - independent pools serialize initial schema creation on a fresh schema
+  ---
+  duration_ms: 31.904617
+  type: 'test'
+  ...
+# Subtest: employee grants bind to one user and are immediately revocable
+ok 35 - employee grants bind to one user and are immediately revocable
+  ---
+  duration_ms: 17.329219
+  type: 'test'
+  ...
+# Subtest: provider options require local hosts and non-production for insecure HTTP
+ok 36 - provider options require local hosts and non-production for insecure HTTP
+  ---
+  duration_ms: 1.465004
+  type: 'test'
+  ...
+# Subtest: provider options use actor-specific cookie defaults and preserve fixed URLs
+ok 37 - provider options use actor-specific cookie defaults and preserve fixed URLs
+  ---
+  duration_ms: 0.179464
+  type: 'test'
+  ...
+# Subtest: entity IDs use the full issuer, subject, client, and actor tuple
+ok 38 - entity IDs use the full issuer, subject, client, and actor tuple
+  ---
+  duration_ms: 0.248643
+  type: 'test'
+  ...
+# Subtest: standard registration and credential updates fail closed
+ok 39 - standard registration and credential updates fail closed
+  ---
+  duration_ms: 0.751026
+  type: 'test'
+  ...
+# Subtest: state storage hashes browser bindings and consumes only a live matching state
+ok 40 - state storage hashes browser bindings and consumes only a live matching state
+  ---
+  duration_ms: 1.86514
+  type: 'test'
+  ...
+# Subtest: nested state-store locks reuse the transaction connection across instances
+ok 41 - nested state-store locks reuse the transaction connection across instances
+  ---
+  duration_ms: 0.623686
+  type: 'test'
+  ...
+# Subtest: same-key lock waiters do not check out a connection and another key can progress
+ok 42 - same-key lock waiters do not check out a connection and another key can progress
+  ---
+  duration_ms: 2.85607
+  type: 'test'
+  ...
+# Subtest: lock admission releases after connect and action failures
+ok 43 - lock admission releases after connect and action failures
+  ---
+  duration_ms: 2.405101
+  type: 'test'
+  ...
+# (node:3621) ExperimentalWarning: The MockTimers API is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: lock admission caps outstanding database operations and times out queued entries
+ok 44 - lock admission caps outstanding database operations and times out queued entries
+  ---
+  duration_ms: 14.222836
+  type: 'test'
+  ...
+1..44
+# tests 62
+# suites 0
+# pass 62
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4389.109935
